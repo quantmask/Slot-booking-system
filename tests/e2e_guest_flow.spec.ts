@@ -26,3 +26,4 @@ test.describe('Slotbook Guest Booking & Management Flow', () => {
     await expect(page.locator('text=Download .ics Calendar')).toBeVisible();
   });
 });
+

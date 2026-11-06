@@ -28,7 +28,10 @@ export async function publicRoutes(app: FastifyInstance) {
 
   // Real-time Server-Sent Events (SSE) Stream for Instant Slot Sync
   app.get('/api/hosts/:host/events/:slug/slots/stream', (req, reply) => {
-    const { host, slug } = req.params as { host: string; slug: string };
+    const { host } = req.params as { host: string; slug: string };
+
+    // Hijack the response to allow long-lived SSE streaming without Fastify closing the connection
+    reply.hijack();
 
     reply.raw.setHeader('Content-Type', 'text/event-stream');
     reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -39,20 +42,37 @@ export async function publicRoutes(app: FastifyInstance) {
     reply.raw.write(`data: ${JSON.stringify({ type: 'CONNECTED', timestamp: Date.now() })}\n\n`);
 
     const onUpdate = (event: any) => {
-      if (!event || !event.hostSlug || event.hostSlug === host) {
-        reply.raw.write(`data: ${JSON.stringify({ type: 'SLOTS_UPDATED', timestamp: Date.now() })}\n\n`);
+      if (!reply.raw.destroyed && (!event || !event.hostSlug || event.hostSlug === host)) {
+        try {
+          reply.raw.write(`data: ${JSON.stringify({ type: 'SLOTS_UPDATED', timestamp: Date.now() })}\n\n`);
+        } catch {
+          // Client disconnected
+        }
       }
     };
 
     slotEventEmitter.on('slots_changed', onUpdate);
 
     const heartbeat = setInterval(() => {
-      reply.raw.write(': heartbeat\n\n');
+      if (reply.raw.destroyed) {
+        clearInterval(heartbeat);
+        return;
+      }
+      try {
+        reply.raw.write(': heartbeat\n\n');
+      } catch {
+        clearInterval(heartbeat);
+      }
     }, 15000);
 
     req.raw.on('close', () => {
       clearInterval(heartbeat);
       slotEventEmitter.off('slots_changed', onUpdate);
+      if (!reply.raw.destroyed) {
+        try {
+          reply.raw.end();
+        } catch {}
+      }
     });
   });
 

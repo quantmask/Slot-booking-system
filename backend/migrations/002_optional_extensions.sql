@@ -82,3 +82,4 @@ CREATE TABLE IF NOT EXISTS event_team_hosts (
     host_id UUID NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
     PRIMARY KEY (event_type_id, host_id)
 );
+

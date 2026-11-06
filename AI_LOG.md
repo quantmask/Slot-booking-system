@@ -65,3 +65,4 @@ This project leveraged AI coding assistants (Claude 3.5 Sonnet and Gemini Pro) a
 11. **Accessibility:** Keyboard navigation, `Enter`/`Space` handlers, ARIA labels, and live regions.
 12. **Load Benchmark:** k6 load testing script in `backend/tests/k6_load_test.js`.
 13. **CI/CD:** GitHub Actions workflow in `.github/workflows/ci.yml`.
+

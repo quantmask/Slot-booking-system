@@ -68,3 +68,4 @@ export async function botHoldProtector(req: FastifyRequest, reply: FastifyReply)
     // If DB check fails, proceed without blocking
   }
 }
+

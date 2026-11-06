@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Clock, Calendar, Users, Globe, CheckCircle, AlertCircle, ArrowLeft, 
   RefreshCw, Copy, Check, Download, CalendarPlus, ShieldCheck, UserPlus, X 
@@ -112,6 +112,8 @@ export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false 
 
   // Booking Flow State
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const selectedSlotRef = useRef<Slot | null>(selectedSlot);
+  selectedSlotRef.current = selectedSlot;
   const [holdId, setHoldId] = useState<string | null>(null);
   const [holdExpiresAt, setHoldExpiresAt] = useState<string | null>(null);
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
@@ -204,7 +206,7 @@ export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false 
 
     // 3. Fallback Auto-Refresh Interval (polls silently every 2.5 seconds while browsing slots)
     const pollInterval = setInterval(() => {
-      if (!selectedSlot && document.visibilityState === 'visible') {
+      if (!selectedSlotRef.current && document.visibilityState === 'visible') {
         fetchSlots(true);
       }
     }, 2500);
@@ -225,7 +227,7 @@ export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false 
       window.removeEventListener('focus', handleVisibilityChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [hostSlug, eventSlug, guestTz, selectedSlot]);
+  }, [hostSlug, eventSlug, guestTz]);
 
   // Hold Countdown Timer (PRD G-3, G-5)
   useEffect(() => {
