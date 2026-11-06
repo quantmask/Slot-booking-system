@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Clock, Calendar, Users, Globe, CheckCircle, AlertCircle, ArrowLeft, 
   RefreshCw, Copy, Check, Download, CalendarPlus, ShieldCheck, UserPlus, X 
@@ -123,7 +123,6 @@ export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false 
   const [submitting, setSubmitting] = useState(false);
   const [confirmedBooking, setConfirmedBooking] = useState<any | null>(null);
   const [copied, setCopied] = useState(false);
-  const [dateFilter, setDateFilter] = useState<'all' | 'week' | 'nextWeek'>('all');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   // Optional Extension: Waitlist State
@@ -408,11 +407,9 @@ export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false 
 
   const sortedDates = Object.keys(slotsByDate).sort();
 
-  // Filter dates based on selected date or quick tabs
-  const filteredDates = sortedDates.filter((dateStr, idx) => {
+  // Filter dates based on selected date
+  const filteredDates = sortedDates.filter((dateStr) => {
     if (selectedDate) return dateStr === selectedDate;
-    if (dateFilter === 'week') return idx < 7;
-    if (dateFilter === 'nextWeek') return idx >= 7 && idx < 14;
     return true;
   });
 
@@ -537,7 +534,7 @@ export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false 
 
   // MAIN BOOKING INTERFACE
   return (
-    <div className="max-w-4xl mx-auto bg-white border border-slate-200/90 rounded-3xl shadow-sm overflow-hidden">
+    <div className={`max-w-4xl mx-auto bg-white overflow-hidden ${isEmbedded ? 'rounded-none border-0 shadow-none' : 'border border-slate-200/90 rounded-3xl shadow-sm'}`}>
       {/* Top Banner / Event Header */}
       <div className="p-6 sm:p-8 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -743,7 +740,7 @@ export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false 
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={fetchSlots}
+                  onClick={() => fetchSlots()}
                   disabled={loading}
                   title="Refresh Slots"
                   className="px-3 py-1.5 text-slate-600 hover:text-slate-900 text-xs font-semibold rounded-lg border border-slate-200 hover:bg-slate-50 flex items-center gap-1.5 transition"

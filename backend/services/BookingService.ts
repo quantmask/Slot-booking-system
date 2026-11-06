@@ -66,7 +66,7 @@ export class BookingService {
     }
 
     // 2. Execute hold in an ACID transaction
-    return await withTransaction(async (client) => {
+    const result = await withTransaction(async (client) => {
       // Find host
       const hostRes = await client.query(
         'SELECT id, timezone, daily_booking_cap FROM hosts WHERE slug = $1',
@@ -288,7 +288,7 @@ export class BookingService {
       throw new BookingError('Valid guest email is required', 400, 'INVALID_EMAIL');
     }
 
-    return await withTransaction(async (client) => {
+    const result = await withTransaction(async (client) => {
       // Find booking and lock it
       const bookingRes = await client.query(`
         SELECT b.*, s.host_id, s.event_type_id, s.start_at, s.end_at, et.name AS event_name
@@ -434,7 +434,7 @@ export class BookingService {
   static async rescheduleBooking(token: string, newSlotStart: string) {
     const tokenHash = hashToken(token);
 
-    return await withTransaction(async (client) => {
+    const result = await withTransaction(async (client) => {
       const bRes = await client.query(`
         SELECT b.*, s.host_id, s.event_type_id, s.start_at AS old_start, s.id AS old_session_id,
                et.name AS event_name, et.duration_min, et.capacity, et.buffer_before_min, et.buffer_after_min,

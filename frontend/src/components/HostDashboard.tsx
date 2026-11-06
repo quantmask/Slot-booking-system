@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
-  User, Calendar, Clock, Settings, LogOut, Plus, Trash2, CheckCircle, 
-  AlertCircle, RefreshCw, Copy, Check, ExternalLink, ShieldCheck, Zap, 
-  Search, Users, Activity, Sliders, CalendarDays, Lock, Code, Radio, UserCheck, X, Link2
+  Calendar, Clock, Settings, LogOut, Plus, Trash2, CheckCircle, 
+  AlertCircle, RefreshCw, Copy, Check, ExternalLink, 
+  Sliders, CalendarDays, Lock, Code, Radio, UserCheck, X
 } from 'lucide-react';
 
 const COMMON_TIMEZONES = [
@@ -452,6 +452,13 @@ export default function HostDashboard() {
         <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2 animate-in fade-in">
           <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{actionSuccess}</span>
+        </div>
+      )}
+
+      {actionError && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{actionError}</span>
         </div>
       )}
 
@@ -1000,6 +1007,98 @@ export default function HostDashboard() {
               {copiedEmbed ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               <span>{copiedEmbed ? 'Copied to Clipboard!' : 'Copy Embed Code'}</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Event Type Creation Modal */}
+      {showEventModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-slate-900 text-base">Create Event Type</h3>
+              <button onClick={() => setShowEventModal(false)} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateEvent} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Event Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Technical Interview"
+                  value={newEvent.name}
+                  onChange={(e) => setNewEvent({ ...newEvent, name: e.target.value, slug: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-') })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Slug</label>
+                  <input
+                    type="text"
+                    required
+                    value={newEvent.slug}
+                    onChange={(e) => setNewEvent({ ...newEvent, slug: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Duration (min)</label>
+                  <input
+                    type="number"
+                    required
+                    min="5"
+                    max="480"
+                    value={newEvent.duration_min}
+                    onChange={(e) => setNewEvent({ ...newEvent, duration_min: parseInt(e.target.value, 10) || 30 })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Capacity</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max="100"
+                    value={newEvent.capacity}
+                    onChange={(e) => setNewEvent({ ...newEvent, capacity: parseInt(e.target.value, 10) || 1 })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Buffer After (min)</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    max="120"
+                    value={newEvent.buffer_after_min}
+                    onChange={(e) => setNewEvent({ ...newEvent, buffer_after_min: parseInt(e.target.value, 10) || 0 })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEventModal(false)}
+                  className="flex-1 py-2.5 border border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 transition"
+                >
+                  Create
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

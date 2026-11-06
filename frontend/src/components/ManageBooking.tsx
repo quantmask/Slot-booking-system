@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
-  Calendar, Clock, AlertCircle, CheckCircle, RefreshCw, XCircle, 
-  ArrowRight, ArrowLeft, Download, CalendarPlus, ShieldCheck, User, Globe 
+  CheckCircle, RefreshCw, XCircle, Download, CalendarPlus 
 } from 'lucide-react';
 
 interface ManageBookingProps {

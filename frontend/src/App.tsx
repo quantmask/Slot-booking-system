@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import PublicBooking from './components/PublicBooking.js';
 import ManageBooking from './components/ManageBooking.js';
 import HostDashboard from './components/HostDashboard.js';
 import { 
   Calendar, User, Clock, ShieldCheck, Globe, ArrowRight, 
-  CheckCircle2, ChevronRight, Sliders, Shield
+  ChevronRight, Sliders
 } from 'lucide-react';
 
 export default function App() {
