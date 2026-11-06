@@ -1,8 +1,32 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Clock, Calendar, Users, Globe, CheckCircle, AlertCircle, ArrowLeft, 
-  RefreshCw, Copy, Check, Download, CalendarPlus, ShieldCheck, UserPlus, X 
+  RefreshCw, Copy, Check, Download, CalendarPlus, ShieldCheck, UserPlus, X,
+  ChevronDown, ChevronLeft, ChevronRight, ArrowRight
 } from 'lucide-react';
+
+function getTodayDateStr(tz: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+function formatIsoDate(isoDate: string, options: Intl.DateTimeFormatOptions): string {
+  try {
+    const [y, m, d] = isoDate.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    return dt.toLocaleDateString('en-US', { ...options, timeZone: 'UTC' });
+  } catch {
+    return isoDate;
+  }
+}
 
 interface PublicBookingProps {
   hostSlug: string;
@@ -125,7 +149,36 @@ export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false 
   const [submitting, setSubmitting] = useState(false);
   const [confirmedBooking, setConfirmedBooking] = useState<any | null>(null);
   const [copied, setCopied] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const todayDateStr = getTodayDateStr(guestTz);
+  const [selectedDate, setSelectedDate] = useState<string>(() => getTodayDateStr(guestTz));
+  const [showCalendarDropdown, setShowCalendarDropdown] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+
+  // Keep calendar month aligned with selectedDate
+  useEffect(() => {
+    if (selectedDate) {
+      const [y, m] = selectedDate.split('-').map(Number);
+      if (!isNaN(y) && !isNaN(m)) {
+        setCalendarMonth(new Date(y, m - 1, 1));
+      }
+    }
+  }, [selectedDate]);
+
+  // Click outside listener for calendar popover
+  useEffect(() => {
+    if (!showCalendarDropdown) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.calendar-dropdown-container')) {
+        setShowCalendarDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showCalendarDropdown]);
 
   // Optional Extension: Waitlist State
   const [showWaitlistModal, setShowWaitlistModal] = useState(false);
@@ -409,11 +462,55 @@ export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false 
 
   const sortedDates = Object.keys(slotsByDate).sort();
 
-  // Filter dates based on selected date
-  const filteredDates = sortedDates.filter((dateStr) => {
-    if (selectedDate) return dateStr === selectedDate;
-    return true;
+  // Selected Day Slots (strictly for the active day)
+  const selectedDaySlots = slotsByDate[selectedDate] || [];
+
+  // Next available date with open slots (for one-click jump)
+  const nextAvailableDate = sortedDates.find((d) => d > selectedDate && (slotsByDate[d]?.length || 0) > 0);
+
+  const dropdownDateLabel = formatIsoDate(selectedDate, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   });
+
+  const calendarYear = calendarMonth.getFullYear();
+  const calendarMonthIndex = calendarMonth.getMonth();
+  const calendarMonthLabel = calendarMonth.toLocaleDateString([], { month: 'long', year: 'numeric' });
+  const firstDayOfWeek = new Date(calendarYear, calendarMonthIndex, 1).getDay();
+  const daysInMonth = new Date(calendarYear, calendarMonthIndex + 1, 0).getDate();
+
+  const handlePrevDay = () => {
+    const [y, m, d] = selectedDate.split('-').map(Number);
+    const cur = new Date(Date.UTC(y, m - 1, d));
+    cur.setUTCDate(cur.getUTCDate() - 1);
+    const prevStr = cur.toISOString().slice(0, 10);
+    if (prevStr >= todayDateStr) {
+      setSelectedDate(prevStr);
+    }
+  };
+
+  const handleNextDay = () => {
+    const [y, m, d] = selectedDate.split('-').map(Number);
+    const cur = new Date(Date.UTC(y, m - 1, d));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    setSelectedDate(cur.toISOString().slice(0, 10));
+  };
+
+  const handleToday = () => {
+    setSelectedDate(todayDateStr);
+    const today = new Date();
+    setCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+  };
+
+  const handlePrevMonth = () => {
+    setCalendarMonth(new Date(calendarYear, calendarMonthIndex - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCalendarMonth(new Date(calendarYear, calendarMonthIndex + 1, 1));
+  };
 
   // SUCCESS CONFIRMATION VIEW
   if (confirmedBooking) {
@@ -724,24 +821,153 @@ export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false 
           </div>
         ) : (
           /* STEP 1: TIME SLOT SELECTOR */
-          <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
-              <div>
-                <div className="flex items-center gap-2.5">
-                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Calendar className="w-5 h-5 text-slate-700" /> Select Date & Time
-                  </h2>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Live Sync
-                  </span>
+          <div className="space-y-6">
+            {/* Top Toolbar: Date Selector Dropdown + Day Steppers + Status */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+              {/* Date Dropdown & Stepper Controls */}
+              <div className="flex flex-wrap items-center gap-2 relative calendar-dropdown-container">
+                <button
+                  type="button"
+                  onClick={() => setShowCalendarDropdown(!showCalendarDropdown)}
+                  className="inline-flex items-center gap-2.5 px-4 py-2.5 bg-white border border-slate-300 hover:border-slate-400 rounded-xl text-slate-800 text-xs sm:text-sm font-semibold shadow-2xs hover:bg-slate-50 transition focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <Calendar className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>{dropdownDateLabel}</span>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showCalendarDropdown ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Day Stepper Controls */}
+                <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={handlePrevDay}
+                    disabled={selectedDate <= todayDateStr}
+                    title="Previous Day"
+                    className="p-1.5 rounded-lg text-slate-700 hover:bg-white hover:shadow-2xs disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleToday}
+                    disabled={selectedDate === todayDateStr}
+                    className="px-2.5 py-1 text-xs font-semibold rounded-lg text-slate-700 hover:bg-white hover:shadow-2xs disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNextDay}
+                    title="Next Day"
+                    className="p-1.5 rounded-lg text-slate-700 hover:bg-white hover:shadow-2xs transition"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Available windows projected in your selected timezone.
-                </p>
+
+                {/* Calendar Dropdown Popover */}
+                {showCalendarDropdown && (
+                  <div className="absolute left-0 top-full mt-2 z-30 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 w-76 sm:w-80 animate-in fade-in zoom-in-95">
+                    {/* Month Header & Controls */}
+                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+                      <button
+                        type="button"
+                        onClick={handlePrevMonth}
+                        className="p-1 hover:bg-slate-100 rounded-lg text-slate-600 transition"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <span className="text-xs sm:text-sm font-bold text-slate-900">{calendarMonthLabel}</span>
+                      <button
+                        type="button"
+                        onClick={handleNextMonth}
+                        className="p-1 hover:bg-slate-100 rounded-lg text-slate-600 transition"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Weekday Labels */}
+                    <div className="grid grid-cols-7 gap-1 text-center mb-1">
+                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+                        <div key={d} className="text-[10px] font-bold text-slate-400 py-1">
+                          {d}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Days Matrix */}
+                    <div className="grid grid-cols-7 gap-1 text-center">
+                      {Array.from({ length: firstDayOfWeek }).map((_, idx) => (
+                        <div key={`blank-${idx}`} className="h-8 w-8" />
+                      ))}
+                      {Array.from({ length: daysInMonth }).map((_, idx) => {
+                        const dayNum = idx + 1;
+                        const dStr = `${calendarYear}-${String(calendarMonthIndex + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+                        const hasSlots = (slotsByDate[dStr]?.length || 0) > 0;
+                        const isSelected = selectedDate === dStr;
+                        const isToday = dStr === todayDateStr;
+                        const isPast = dStr < todayDateStr;
+
+                        return (
+                          <button
+                            key={dStr}
+                            type="button"
+                            disabled={isPast}
+                            onClick={() => {
+                              setSelectedDate(dStr);
+                              setShowCalendarDropdown(false);
+                            }}
+                            className={`h-8 w-8 mx-auto rounded-xl text-xs font-semibold flex flex-col items-center justify-center transition-all relative ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                                : hasSlots
+                                ? 'bg-indigo-50/80 text-indigo-950 font-bold hover:bg-indigo-100 border border-indigo-200/70'
+                                : isToday
+                                ? 'border border-slate-300 text-slate-900 font-bold hover:bg-slate-50'
+                                : isPast
+                                ? 'text-slate-300 cursor-not-allowed'
+                                : 'text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            <span>{dayNum}</span>
+                            {hasSlots && !isSelected && (
+                              <span className="w-1 h-1 rounded-full bg-emerald-500 absolute bottom-1"></span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Footer Legend */}
+                    <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span>Available Slots</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedDate(todayDateStr);
+                          setCalendarMonth(new Date());
+                          setShowCalendarDropdown(false);
+                        }}
+                        className="text-indigo-600 hover:text-indigo-800 font-semibold"
+                      >
+                        Jump to Today
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Status and Refresh */}
+              <div className="flex items-center gap-2.5 self-end md:self-auto">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Live Sync
+                </span>
                 <button
+                  type="button"
                   onClick={() => fetchSlots()}
                   disabled={loading}
                   title="Refresh Slots"
@@ -753,136 +979,130 @@ export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false 
               </div>
             </div>
 
-            {/* Interactive Date Strip Component */}
-            {sortedDates.length > 0 && (
-              <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-6 scrollbar-none">
-                <button
-                  onClick={() => setSelectedDate(null)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition border ${
-                    selectedDate === null
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  All Days ({data?.slots?.length || 0})
-                </button>
-                {sortedDates.map((dStr) => {
-                  const firstSlot = slotsByDate[dStr][0];
-                  const dObj = new Date(firstSlot.start_at);
-                  const dayName = dObj.toLocaleDateString([], { weekday: 'short', timeZone: guestTz });
-                  const dayNum = dObj.toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: guestTz });
-                  const isSelected = selectedDate === dStr;
-                  return (
-                    <button
-                      key={dStr}
-                      onClick={() => setSelectedDate(dStr)}
-                      className={`px-3.5 py-1.5 rounded-xl text-center whitespace-nowrap transition border ${
-                        isSelected
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="text-[10px] font-bold uppercase tracking-wider">{dayName}</div>
-                      <div className="text-xs font-semibold">{dayNum}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {filteredDates.length === 0 ? (
-              <div className="p-12 text-center text-slate-500 bg-slate-50 border border-slate-200 rounded-2xl">
-                <Calendar className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                <div className="font-semibold text-slate-700">No Slots Available</div>
-                <p className="text-xs text-slate-500 mt-1 mb-4">
-                  All slots for this period are booked or fall outside the host booking horizon.
-                </p>
-                <button
-                  onClick={() => {
-                    setWaitlistSlotTime(new Date().toISOString());
-                    setShowWaitlistModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  <span>Join Waitlist for Next Opening</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {filteredDates.map((dateStr) => {
-                  const daySlots = slotsByDate[dateStr];
-                  const dateObj = new Date(daySlots[0].start_at);
-                  const formattedDate = dateObj.toLocaleDateString([], {
-                    weekday: 'short',
-                    month: 'short',
-                    day: 'numeric',
-                    timeZone: guestTz,
-                  });
-
-                  return (
-                    <div key={dateStr} className="border border-slate-200 rounded-2xl p-5 bg-slate-50/50 hover:bg-slate-50/80 transition">
-                      <div className="font-bold text-slate-800 text-sm mb-3 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
-                          <span>{formattedDate}</span>
-                        </div>
-                        <span className="text-xs text-slate-400 font-normal">
-                          {daySlots.length} available slot{daySlots.length === 1 ? '' : 's'}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
-                        {daySlots.map((slot) => {
-                          const isGroup = slot.capacity > 1;
-                          return (
-                            <button
-                              key={slot.start_at}
-                              onClick={() => handleSelectSlot(slot)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  handleSelectSlot(slot);
-                                }
-                              }}
-                              role="button"
-                              tabIndex={0}
-                              aria-label={`Reserve slot at ${slot.display_start} on ${formattedDate}`}
-                              className="p-3 border border-slate-200 rounded-xl bg-white hover:border-indigo-600 hover:bg-indigo-50/60 hover:shadow-2xs text-center transition group relative focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                            >
-                              <div className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition">
-                                {slot.display_start}
-                              </div>
-                              {isGroup && (
-                                <div className="text-[11px] text-emerald-600 font-medium mt-0.5 flex items-center justify-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                  <span>{slot.seats_left} seat{slot.seats_left === 1 ? '' : 's'}</span>
-                                </div>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Priority Waitlist CTA */}
-                <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-                  <span>Need an alternative time? Register on the priority waitlist.</span>
-                  <button
-                    onClick={() => {
-                      setWaitlistSlotTime(data?.slots?.[0]?.start_at || new Date().toISOString());
-                      setShowWaitlistModal(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-semibold transition"
-                  >
-                    <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Join Priority Waitlist</span>
-                  </button>
+            {/* Selected Date Card & Slots */}
+            <div className="border border-slate-200 rounded-2xl p-6 bg-slate-50/40">
+              {/* Day Header */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b border-slate-200/80">
+                <div>
+                  <div className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-0.5">
+                    Viewing Appointments For
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-bold text-slate-900">
+                    {formatIsoDate(selectedDate, {
+                      weekday: 'long',
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </h3>
+                </div>
+                <div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                    selectedDaySlots.length > 0
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-slate-100 text-slate-500 border-slate-200'
+                  }`}>
+                    {selectedDaySlots.length} available slot{selectedDaySlots.length === 1 ? '' : 's'}
+                  </span>
                 </div>
               </div>
-            )}
+
+              {/* Slot Grid or Empty State */}
+              {selectedDaySlots.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {selectedDaySlots.map((slot) => {
+                    const isGroup = slot.capacity > 1;
+                    return (
+                      <button
+                        key={slot.start_at}
+                        onClick={() => handleSelectSlot(slot)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleSelectSlot(slot);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Reserve slot at ${slot.display_start}`}
+                        className="p-3.5 border border-slate-200/90 rounded-xl bg-white hover:border-indigo-600 hover:bg-indigo-50/50 hover:shadow-2xs text-center transition group relative focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      >
+                        <div className="text-base font-bold text-slate-900 group-hover:text-indigo-600 tracking-tight transition">
+                          {slot.display_start}
+                        </div>
+                        {isGroup ? (
+                          <div className="text-[11px] text-emerald-600 font-semibold mt-1 flex items-center justify-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            <span>{slot.seats_left} seat{slot.seats_left === 1 ? '' : 's'} left</span>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-slate-400 group-hover:text-indigo-500 mt-0.5 transition">
+                            {data?.event.duration_min} min • 1-on-1
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* No Slots on Selected Day */
+                <div className="py-12 px-4 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                    <Calendar className="w-6 h-6" />
+                  </div>
+                  <h4 className="font-bold text-slate-800 text-base">
+                    No Appointments Available
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
+                    There are no open slots on this date. Choose another date from the calendar above, or jump directly to the next open opening.
+                  </p>
+                  <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+                    {nextAvailableDate && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDate(nextAvailableDate)}
+                        className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center gap-1.5 transition"
+                      >
+                        <span>
+                          Jump to Next Open Day ({formatIsoDate(nextAvailableDate, { month: 'short', day: 'numeric' })})
+                        </span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWaitlistSlotTime(selectedDate + 'T09:00:00Z');
+                        setShowWaitlistModal(true);
+                      }}
+                      className="px-4 py-2.5 bg-white border border-slate-300 hover:border-slate-400 text-slate-700 rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-1.5 transition"
+                    >
+                      <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Join Waitlist for This Day</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Priority Waitlist Footer Banner */}
+            <div className="p-4 bg-slate-100/70 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                <span>Looking for a customized or fully booked time slot? Register for automatic priority promotion.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setWaitlistSlotTime(selectedDate + 'T09:00:00Z');
+                  setShowWaitlistModal(true);
+                }}
+                className="px-3.5 py-1.5 bg-white border border-slate-300 hover:border-slate-400 text-slate-800 rounded-xl font-semibold shadow-2xs hover:bg-slate-50 transition shrink-0 flex items-center gap-1.5"
+              >
+                <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Join Priority Waitlist</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
