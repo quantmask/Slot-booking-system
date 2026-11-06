@@ -8,12 +8,13 @@ export async function seedDatabase() {
     // Upsert Host 'alex'
     const passwordHash = hashPassword('SlotBook@Secure2026!');
     const hostRes = await client.query(`
-      INSERT INTO hosts (slug, email, password_hash, timezone)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO hosts (slug, email, password_hash, timezone, daily_booking_cap)
+      VALUES ($1, $2, $3, $4, NULL)
       ON CONFLICT (slug) DO UPDATE 
       SET email = EXCLUDED.email, 
           password_hash = EXCLUDED.password_hash,
-          timezone = EXCLUDED.timezone
+          timezone = EXCLUDED.timezone,
+          daily_booking_cap = NULL
       RETURNING id;
     `, ['alex', 'alex.wright@slotbook.io', passwordHash, 'America/New_York']);
 
@@ -25,9 +26,9 @@ export async function seedDatabase() {
     await client.query(`
       INSERT INTO event_types (
         host_id, slug, name, duration_min, capacity,
-        buffer_before_min, buffer_after_min, min_notice_hours, horizon_days
+        buffer_before_min, buffer_after_min, min_notice_hours, horizon_days, daily_booking_cap
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL)
       ON CONFLICT (host_id, slug) DO UPDATE
       SET name = EXCLUDED.name,
           duration_min = EXCLUDED.duration_min,
@@ -36,6 +37,7 @@ export async function seedDatabase() {
           buffer_after_min = EXCLUDED.buffer_after_min,
           min_notice_hours = EXCLUDED.min_notice_hours,
           horizon_days = EXCLUDED.horizon_days,
+          daily_booking_cap = NULL,
           archived_at = NULL
       RETURNING id;
     `, [hostId, 'quick-catchup', 'Executive Strategy Consultation', 30, 1, 0, 15, 4, 30]);
@@ -44,9 +46,9 @@ export async function seedDatabase() {
     await client.query(`
       INSERT INTO event_types (
         host_id, slug, name, duration_min, capacity,
-        buffer_before_min, buffer_after_min, min_notice_hours, horizon_days
+        buffer_before_min, buffer_after_min, min_notice_hours, horizon_days, daily_booking_cap
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL)
       ON CONFLICT (host_id, slug) DO UPDATE
       SET name = EXCLUDED.name,
           duration_min = EXCLUDED.duration_min,
@@ -55,6 +57,7 @@ export async function seedDatabase() {
           buffer_after_min = EXCLUDED.buffer_after_min,
           min_notice_hours = EXCLUDED.min_notice_hours,
           horizon_days = EXCLUDED.horizon_days,
+          daily_booking_cap = NULL,
           archived_at = NULL
       RETURNING id;
     `, [hostId, 'group-workshop', 'Architecture & Product Review', 60, 3, 15, 15, 24, 30]);

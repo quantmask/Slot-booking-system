@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { pool } from '../config/db.js';
 import { runMigrations } from '../scripts/migrate.js';
 import { seedDatabase } from '../seeds/seed.js';
@@ -22,6 +22,13 @@ describe('Asynchronous Workers (Outbox Worker & Sweeper)', () => {
   afterAll(async () => {
     await app.close();
     await pool.end();
+  });
+
+  beforeEach(async () => {
+    await pool.query('DELETE FROM notifications;');
+    await pool.query('DELETE FROM bookings;');
+    await pool.query('DELETE FROM sessions;');
+    await pool.query('DELETE FROM idempotency_keys;');
   });
 
   it('OutboxWorker dispatches pending events to webhook receiver with deduplication header', async () => {

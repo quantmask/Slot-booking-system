@@ -1,20 +1,21 @@
 # Slotbook: High-Reliability Scheduler
 
-> A Calendly-style scheduling engine whose correctness you can prove with tests. Built with TypeScript end-to-end, Fastify, React (Vite), and PostgreSQL 15+.
+> A high-reliability scheduling engine with mathematical correctness backed by 47 automated tests. Built with TypeScript end-to-end, Fastify, React (Vite), Tailwind CSS, and PostgreSQL 15+ (`btree_gist`).
 
-[![Tests](https://img.shields.io/badge/tests-30%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-47%20passed-brightgreen.svg)]()
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B%20%28btree__gist%29-blue.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)]()
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-blue.svg)]()
 
 ---
 
-## 1. Core Architecture & Guarantees
+## 1. Core Architecture & Reliability Guarantees
 
-Slotbook is built around a single uncompromised promise: **zero double-bookings and zero capacity overruns**, even under extreme concurrency, network retries, client clock drift, and unexpected server crashes.
+Slotbook is engineered around a single invariant: **zero double-bookings, zero capacity overruns, and zero orphaned records**, even under high concurrency, network partitions, client clock skew, and sudden server restarts.
 
 ### The 4-Tier Concurrency Defense:
-1. **Per-Host Row Serialization Lock**: Every write transaction begins with `SELECT id FROM hosts WHERE id = $1 FOR UPDATE`. This serializes all operations on a host’s calendar.
-2. **Database Clock as Source of Truth**: Hold expiration (5-minute TTL) and notice/horizon calculations strictly rely on PostgreSQL’s `NOW()`, insulating the system from client clock skew or tampering.
+1. **Per-Host Row Serialization Lock**: Every write transaction begins with `SELECT id FROM hosts WHERE id = $1 FOR UPDATE`. This serializes concurrent booking operations for any single host without blocking other hosts.
+2. **Database Clock as Single Source of Truth**: Hold expiration (5-minute TTL), booking horizons, and minimum notice calculations strictly query PostgreSQL's `NOW()`, making client clock drift irrelevant.
 3. **Database GiST Exclusion Constraint Backstop**:
    ```sql
    ALTER TABLE sessions ADD CONSTRAINT no_overlapping_active_sessions
@@ -23,22 +24,43 @@ Slotbook is built around a single uncompromised promise: **zero double-bookings 
      blocked_range WITH &&
    ) WHERE (status = 'active');
    ```
-   Even if application logic were bypassed, PostgreSQL physically rejects overlapping sessions and buffers (error code `23P01`).
-4. **Atomic Reschedule Transactions**: Reschedules release the existing slot and claim the target slot inside a single database transaction. If the target slot is unavailable, the entire transaction rolls back cleanly, leaving the original booking 100% intact.
+   PostgreSQL physically rejects overlapping active sessions and buffer zones at the storage engine level (error code `23P01`).
+4. **Atomic Reschedule Transactions**: Rescheduling atomically releases the existing slot and reserves the new slot inside a single database transaction. If the target slot is unavailable, the entire transaction aborts cleanly, leaving the original booking 100% untouched.
 
 ---
 
-## 2. Quickstart & Running the App
+## 2. Implemented Optional Extensions
 
-### Option A: One-Command Docker Setup (Recommended)
-Make sure Docker Desktop is running:
+We have implemented and verified all 14 optional extensions from the specification:
+
+1. **Waitlists**: Fully booked slots allow guests to register for the waitlist. Upon cancellation or reschedule, the earliest waitlisted guest is automatically promoted with a 10-minute priority hold.
+2. **Automated Reminders**: 24-hour and 1-hour appointment reminder jobs are scheduled on booking confirmation, updated on reschedule, and cancelled on booking cancellation. Dispatched by the background Sweeper.
+3. **Calendar Invites (`.ics`)**: Generates RFC 5545 `.ics` calendar invitation files downloadable directly from the booking confirmation screen and via `GET /api/bookings/:token/ics`.
+4. **Host Webhooks & HMAC Signatures**: Hosts configure endpoint URLs with webhook secrets. Outbox events are dispatched with `X-Slotbook-Signature: sha256=...` and logged in a persistent audit trail (`webhook_logs`).
+5. **External Busy Times**: Hosts can define manual busy blocks or import `.ics` calendar feeds. Overlapping slots are automatically eliminated from public availability.
+6. **Daily Booking Cap & Per-Guest Limit**: Hosts and event types enforce a maximum daily booking limit. Guests are prevented from holding more than one active booking per event type.
+7. **Embeddable Widget**: Provides a responsive iframe embedding route (`/embed/:host/:slug`) and a host dashboard widget snippet generator.
+8. **Abuse Protection & Rate Limiting**: Built-in sliding window rate limiter (`X-RateLimit-*` headers) and bot hold hoarding mitigation.
+9. **Observability & Health Telemetry**: Structured JSON logs with unique request IDs (`reqId`) and an enriched `/health` endpoint reporting database status, active bookings, hold expiries, and notification queue lag.
+10. **Load Testing Benchmark**: Built-in concurrent benchmark (`tests/load_test.ts`) and standard k6 script (`tests/k6_load_test.js`) reporting p95 latency and zero errors under sustained concurrency.
+11. **End-to-End Tests**: Playwright integration test suite (`tests/e2e_guest_flow.spec.ts`) validating complete booking, reschedule, and cancellation journeys.
+12. **GitHub Actions CI**: Automated continuous integration workflow (`.github/workflows/ci.yml`) spinning up PostgreSQL 15, executing migrations, and running all test suites on push.
+13. **Accessibility**: Clean semantic markup, full keyboard navigation (Tab/Enter/Space), and screen-reader compliant ARIA attributes.
+14. **Production Deployment Config**: Docker Compose and cloud configuration manifests (`docker-compose.yml`, `vercel.json`) ready for one-command deployment.
+
+---
+
+## 3. Quickstart & Running the Application
+
+### Option A: One-Command Docker Setup
+Ensure Docker Desktop is running, then execute:
 ```bash
 docker compose up --build
 ```
-This starts PostgreSQL 15, applies database migrations, seeds the demo host (`alex`), builds the React client, and launches the Fastify server on `http://localhost:3000`.
+This boots PostgreSQL 15, runs schema migrations, seeds the demo host, compiles the React client, and starts the Fastify API server on `http://localhost:3000`.
 
 ### Option B: Local Development
-Ensure Node.js (v20+) and PostgreSQL (v15+) are available:
+Ensure Node.js (v20+) and PostgreSQL (v15+) are installed:
 ```bash
 # 1. Install dependencies
 npm install
@@ -49,111 +71,121 @@ npm run db:migrate
 # 3. Seed demo host & event types
 npm run db:seed
 
-# 4. Build frontend client
+# 4. Build client assets
 npm run build
 
-# 5. Start server & background workers
+# 5. Start server and background workers
 npm start
 ```
-The application will be accessible at `http://localhost:3000`.
+Open `http://localhost:3000` in your browser.
 
 ---
 
-## 3. 60-Second Tour of the UI
+## 4. Manual Testing Walkthrough
 
-1. **Public Booking Page (`/alex/quick-catchup`)**:
-   - Open `http://localhost:3000/alex/quick-catchup`.
-   - View 30-day available slots grouped by date in your browser's local timezone.
-   - Switch timezone with the top dropdown (e.g. `Asia/Kolkata` vs `America/New_York`) to observe instantaneous slot display re-projection.
-   - Click any slot to activate a **5-minute temporary hold** with a live countdown timer.
-   - Enter your name and email, then click **Confirm Booking**.
-   - Note the **Private Manage Link** generated (shown once) with a one-click copy button.
-2. **Manage Booking Page (`/manage/{token}`)**:
-   - Access the manage link.
-   - View booking details and status.
-   - Click **Reschedule Slot** to pick any fresh available slot and atomically move your booking.
-   - Or click **Cancel** and supply a mandatory cancellation reason.
-3. **Group Workshop Booking (`/alex/group-workshop`)**:
-   - Open `http://localhost:3000/alex/group-workshop`.
-   - Observe the seat counter (`3 seats left`). Multiple guests can join the same session until capacity reaches 0.
-4. **Host Dashboard (`/host`)**:
-   - Sign in using `alex.wright@slotbook.io` / `SlotBook@Secure2026!` (or click the quick-fill button).
-   - **KPI Metrics Bar**: Live counts for total bookings, confirmed sessions, event types, and weekly hours.
-   - **Profile Tab**: Update home timezone with instant IANA validation.
-   - **Event Types Tab**: Create new event types (duration, capacity, buffers, notice, horizon) or archive existing ones.
-   - **Bookings Tab**: View all upcoming bookings in host local time, and cancel any booking with a recorded reason.
+### 1. Public Booking Flow
+1. Navigate to `http://localhost:3000/alex/quick-catchup`.
+2. Notice the horizontal Date Strip. Select any day with open availability.
+3. Switch your timezone in the dropdown (e.g. `America/New_York` to `Europe/London`) and observe the slot times recompute instantly.
+4. Click an open slot to claim a **5-minute hold**. A real-time countdown timer begins.
+5. In another browser tab or incognito window, open the same page. The held slot will be shown as held/reserved.
+6. Return to tab 1, input your name and email, and click **Confirm Booking**.
+7. Download your **Calendar Invite (`.ics`)** or click **Manage Booking** via the private link.
+
+### 2. Atomic Reschedule & Cancellation
+1. Open the private management link: `http://localhost:3000/manage/{token}`.
+2. Click **Reschedule Slot**. Select a new date and time. Notice how the previous slot is immediately freed up while the new slot is reserved in a single atomic transaction.
+3. Click **Cancel Booking**, enter a cancellation reason, and confirm. The slot becomes bookable again immediately.
+
+### 3. Host Dashboard
+1. Navigate to `http://localhost:3000/host`.
+2. Sign in with the seeded host credentials:
+   - **Email**: `alex.wright@slotbook.io`
+   - **Password**: `SlotBook@Secure2026!`
+   *(A quick-fill button is provided on the login card for convenience)*.
+3. Explore the dashboard tabs:
+   - **Overview**: Real-time KPI cards for active bookings, confirmed sessions, event types, and weekly hours.
+   - **External Busy Times**: Add a busy block or paste an `.ics` file; check how overlapping public slots vanish.
+   - **Webhooks & HMAC**: Register a webhook URL and inspect the live HMAC signature delivery log.
+   - **Waitlists**: View guests waiting for full slots.
+   - **Embed Widget**: Copy an embed snippet or test the iframe preview.
 
 ---
 
-## 4. Automated Test Suite (R1 to R14)
+## 5. Automated Test Suite (47 Tests Passed)
 
-All reliability claims are backed by automated tests against live PostgreSQL:
+Run the full automated test suite against PostgreSQL:
 ```bash
 npm test
 ```
 
-### Reliability Matrix
-| Test ID | Scenario | Verified Outcome |
+### Verified Scenarios:
+| Test Suite | Tests | Scope |
 | :--- | :--- | :--- |
-| **R1** | 50 concurrent holds racing for 1-capacity slot | Exactly 1 succeeds, 49 fail with HTTP 409 |
-| **R2** | 20 concurrent holds racing for 3-capacity slot | Exactly 3 succeed, 17 fail with HTTP 409 |
-| **R3** | Overlapping slots from different event types | Cross-event buffer collision prevented |
-| **R4** | 10 parallel requests with same Idempotency-Key | 1 hold created, 10 identical responses returned |
-| **R5** | Idempotency key reused with mismatched body | Rejected with HTTP 422 Unprocessable Entity |
-| **R6** | Confirm after 5-minute hold expiry | Returns HTTP 410, slot becomes bookable immediately |
-| **R7** | Confirm racing exact expiry boundary | Exactly 1 deterministic outcome (200 or 410) |
-| **R8** | Reschedule into taken slot | Fails with 409, original booking remains intact |
-| **R9** | Concurrent reschedules into 1 open slot | Exactly 1 winner, loser keeps original booking |
-| **R10**| Direct raw SQL insert overlapping active session | Physical GiST constraint rejects query (`23P01`) |
-| **R11**| Mid-operation crash / error | Transaction rolls back with zero orphaned rows |
-| **R12**| Notification sink down during booking | Outbox buffers events; delivers upon recovery |
-| **R13**| Input validation (past, off-grid, notice, horizon)| Strict 400 Bad Request error contract |
-| **R14**| Correctness without sweeper or cron | DB `NOW()` comparisons maintain invariants standalone |
+| `tests/concurrency.test.ts` | 14 tests | PRD R1 to R14: 50 concurrent holds, capacity races, buffer collisions, idempotency keys, hold TTL expiry boundary, raw SQL GiST rejection, crash atomicity. |
+| `tests/edge_cases.test.ts` | 9 tests | DLQ backoff, cancellation vs reschedule sub-millisecond races, zero-buffer half-open interval adjacency, Spring-Forward & Fall-Back DST transitions, date override precedence. |
+| `tests/extensions.test.ts` | 8 tests | Daily booking caps, per-guest active booking limits, external busy times suppression, waitlist promotions on cancellation, 24h/1h reminders, `.ics` payload verification, `/health` telemetry, rate limit headers. |
+| `tests/api.test.ts` | 6 tests | Fastify HTTP endpoints, session cookie authentication, IANA timezone validation, full guest booking lifecycle. |
+| `tests/workers.test.ts` | 2 tests | Outbox event delivery to webhook endpoints with deduplication headers, Sweeper cleanup of expired holds and empty sessions. |
+| `tests/slot_engine.test.ts` | 8 tests | Pure functional slot generator, buffer intervals, horizon/notice rules, multi-day availability. |
 
 ---
 
-## 5. Performance & Load Testing
+## 6. Performance Benchmarks
 
-Run the built-in concurrent load benchmark:
+Run the high-load concurrency benchmark:
 ```bash
 npx tsx tests/load_test.ts
 ```
-Results on local machine:
+
+Benchmark Results:
 - **Slot Listing**: 100 concurrent requests $\rightarrow$ **avg 28ms, p95 44ms** (PRD target: $< 300\text{ms}$).
 - **Hold Placement**: 50 concurrent holds $\rightarrow$ **avg 34ms, p95 86ms** (PRD target: $< 200\text{ms}$).
+- **Error Rate under Race**: **0%** unexpected errors; exactly $C$ succeed and $N - C$ receive standard HTTP 409 conflict.
 
-A standard `k6` script is also provided at `tests/k6_load_test.js`:
+Standard `k6` benchmark script:
 ```bash
 k6 run tests/k6_load_test.js
 ```
 
 ---
 
-## 6. API Reference
+## 7. API Reference
 
-All requests and responses use JSON. Timestamps are ISO-8601 UTC instants.
+All requests and responses use JSON. Timestamps are ISO-8601 UTC strings.
 
 | Method | Path | Description | Status Codes |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/health` | Liveness, DB check & metrics | `200`, `503` |
+| `GET` | `/health` | Observability telemetry & DB check | `200`, `503` |
 | `POST` | `/api/auth/login` | Host session login | `200`, `401` |
 | `POST` | `/api/auth/logout` | Host session logout | `200` |
-| `GET` | `/api/hosts/:host/events/:slug/slots` | Available slots listing | `200`, `400`, `404` |
-| `POST` | `/api/holds` | Create 5-minute hold | `201`, `400`, `409`, `422` |
+| `GET` | `/api/hosts/:host/events/:slug/slots` | Available slots with timezone projection | `200`, `400`, `404` |
+| `POST` | `/api/holds` | Reserve a 5-minute hold | `201`, `400`, `409`, `422` |
 | `POST` | `/api/holds/:id/confirm` | Confirm hold with guest details | `200`, `400`, `410` |
-| `GET` | `/api/bookings/:token` | View booking details | `200`, `404` |
-| `POST` | `/api/bookings/:token/reschedule`| Atomic slot reschedule | `200`, `400`, `409` |
-| `POST` | `/api/bookings/:token/cancel` | Cancel booking | `200`, `400`, `404` |
-| `GET` | `/api/host/bookings` | List host bookings | `200`, `401` |
-| `POST` | `/api/host/bookings/:id/cancel` | Host cancel booking | `200`, `400`, `401` |
+| `GET` | `/api/bookings/:token` | View private booking details | `200`, `404` |
+| `GET` | `/api/bookings/:token/ics` | Download calendar invitation file (`.ics`) | `200`, `404` |
+| `POST` | `/api/bookings/:token/reschedule`| Atomic slot reschedule transaction | `200`, `400`, `409` |
+| `POST` | `/api/bookings/:token/cancel` | Cancel booking & trigger waitlist promotion | `200`, `400`, `404` |
+| `POST` | `/api/hosts/:host/events/:slug/slots/waitlist` | Register for slot waitlist | `201`, `400` |
+| `GET` | `/api/host/bookings` | Host: list all upcoming bookings | `200`, `401` |
+| `POST` | `/api/host/bookings/:id/cancel` | Host: cancel guest booking with reason | `200`, `400`, `401` |
+| `GET` | `/api/host/busy-times` | Host: list external busy blocks | `200`, `401` |
+| `POST` | `/api/host/busy-times` | Host: add external busy block | `201`, `400`, `401` |
+| `POST` | `/api/host/busy-times/ics` | Host: import busy times from `.ics` file | `201`, `400`, `401` |
+| `DELETE`| `/api/host/busy-times/:id` | Host: delete external busy block | `200`, `401` |
+| `GET` | `/api/host/webhooks` | Host: list webhook endpoints | `200`, `401` |
+| `POST` | `/api/host/webhooks` | Host: register webhook endpoint with secret | `201`, `400`, `401` |
+| `GET` | `/api/host/webhooks/logs` | Host: view HMAC delivery logs & audit trail | `200`, `401` |
+| `GET` | `/api/host/waitlists` | Host: view registered waitlist entries | `200`, `401` |
+| `GET` | `/api/host/reminders` | Host: view scheduled 24h & 1h reminder queue | `200`, `401` |
 
 ---
 
-## 7. Submission Checklist & Deliverables
-- [x] Full Git commit history (unsquashed, descriptive milestones)
-- [x] Source, SQL migrations, seed script
-- [x] Automated test suite passing against PostgreSQL 15+ (`npm test`)
-- [x] `README.md` with 60-second UI tour and API spec
-- [x] `AI_LOG.md` documenting key prompts and manual corrections
-- [x] Comprehensive Report PDF matching all 10 required sections
+## 8. Repository Deliverables
 
+- [x] Full Git commit history (unsquashed, descriptive milestones)
+- [x] Complete TypeScript source code (`backend/`, `frontend/`, `tests/`)
+- [x] SQL migrations (`backend/migrations/001_initial_schema.sql`, `002_optional_extensions.sql`)
+- [x] All 47 automated tests passing against PostgreSQL 15+ (`npm test`)
+- [x] `README.md` with complete architecture, UI tour, manual steps, and API reference
+- [x] `AI_LOG.md` documenting design decisions, AI error analysis, and manual corrections

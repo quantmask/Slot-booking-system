@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Clock, Calendar, Users, Globe, CheckCircle, AlertCircle, ArrowLeft, 
-  RefreshCw, Copy, Check, Download, CalendarPlus, ShieldCheck, Sparkles 
+  RefreshCw, Copy, Check, Download, CalendarPlus, ShieldCheck, UserPlus, X 
 } from 'lucide-react';
 
 interface PublicBookingProps {
   hostSlug: string;
   eventSlug: string;
+  isEmbedded?: boolean;
 }
 
 interface Slot {
@@ -96,7 +97,7 @@ function getGoogleCalendarUrl(event: {
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${dates}&details=${encodeURIComponent(event.details)}&location=${encodeURIComponent('Virtual Meeting')}`;
 }
 
-export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProps) {
+export default function PublicBooking({ hostSlug, eventSlug, isEmbedded = false }: PublicBookingProps) {
   const [guestTz, setGuestTz] = useState<string>(() => {
     try {
       return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -123,6 +124,15 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
   const [confirmedBooking, setConfirmedBooking] = useState<any | null>(null);
   const [copied, setCopied] = useState(false);
   const [dateFilter, setDateFilter] = useState<'all' | 'week' | 'nextWeek'>('all');
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  // Optional Extension: Waitlist State
+  const [showWaitlistModal, setShowWaitlistModal] = useState(false);
+  const [waitlistName, setWaitlistName] = useState('');
+  const [waitlistEmail, setWaitlistEmail] = useState('');
+  const [waitlistSlotTime, setWaitlistSlotTime] = useState<string>('');
+  const [submittingWaitlist, setSubmittingWaitlist] = useState(false);
+  const [waitlistSuccessMessage, setWaitlistSuccessMessage] = useState<string | null>(null);
 
   // Load available slots (supports silent background reload without UI flicker)
   const fetchSlots = async (silent = false) => {
@@ -352,6 +362,39 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleJoinWaitlist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!waitlistSlotTime) return;
+    setSubmittingWaitlist(true);
+    try {
+      const res = await fetch(`/api/hosts/${hostSlug}/events/${eventSlug}/slots/waitlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slotStart: waitlistSlotTime,
+          guestName: waitlistName,
+          guestEmail: waitlistEmail,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to join waitlist');
+      }
+      const waitResp = await res.json();
+      setWaitlistSuccessMessage(`Registered at position #${waitResp.position}. You will be notified automatically if a spot opens.`);
+      setTimeout(() => {
+        setShowWaitlistModal(false);
+        setWaitlistSuccessMessage(null);
+        setWaitlistName('');
+        setWaitlistEmail('');
+      }, 3000);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSubmittingWaitlist(false);
+    }
+  };
+
   // Group slots by guest local date
   const slotsByDate: { [date: string]: Slot[] } = {};
   if (data?.slots) {
@@ -365,8 +408,9 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
 
   const sortedDates = Object.keys(slotsByDate).sort();
 
-  // Filter dates based on quick tabs
+  // Filter dates based on selected date or quick tabs
   const filteredDates = sortedDates.filter((dateStr, idx) => {
+    if (selectedDate) return dateStr === selectedDate;
     if (dateFilter === 'week') return idx < 7;
     if (dateFilter === 'nextWeek') return idx >= 7 && idx < 14;
     return true;
@@ -498,8 +542,9 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
       <div className="p-6 sm:p-8 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-indigo-300 mb-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Dr. Alexander Wright (@{data?.host.slug || hostSlug})
+            <div className="inline-flex items-center gap-2 text-xs font-semibold text-slate-300 mb-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>Dr. Alexander Wright (@{data?.host.slug || hostSlug})</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               {data?.event.name || 'Executive Session'}
@@ -681,65 +726,88 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
         ) : (
           /* STEP 1: TIME SLOT SELECTOR */
           <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
               <div>
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Calendar className="w-5 h-5 text-indigo-600" /> Select Date & Time
+                    <Calendar className="w-5 h-5 text-slate-700" /> Select Date & Time
                   </h2>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200 shadow-2xs">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Real-Time Sync Active
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Live Sync
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Slots update automatically across all tabs and devices in real-time.
+                  Available windows projected in your selected timezone.
                 </p>
               </div>
 
-              {/* Quick Filter Tabs */}
-              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl text-xs font-semibold">
-                <button
-                  onClick={() => setDateFilter('all')}
-                  className={`px-3 py-1.5 rounded-lg transition ${
-                    dateFilter === 'all' ? 'bg-white text-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  All Days
-                </button>
-                <button
-                  onClick={() => setDateFilter('week')}
-                  className={`px-3 py-1.5 rounded-lg transition ${
-                    dateFilter === 'week' ? 'bg-white text-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  This Week
-                </button>
-                <button
-                  onClick={() => setDateFilter('nextWeek')}
-                  className={`px-3 py-1.5 rounded-lg transition ${
-                    dateFilter === 'nextWeek' ? 'bg-white text-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Next Week
-                </button>
+              <div className="flex items-center gap-2">
                 <button
                   onClick={fetchSlots}
                   disabled={loading}
                   title="Refresh Slots"
-                  className="p-1.5 text-slate-500 hover:text-slate-900 ml-1 rounded-lg"
+                  className="px-3 py-1.5 text-slate-600 hover:text-slate-900 text-xs font-semibold rounded-lg border border-slate-200 hover:bg-slate-50 flex items-center gap-1.5 transition"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
                 </button>
               </div>
             </div>
+
+            {/* Interactive Date Strip Component */}
+            {sortedDates.length > 0 && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-6 scrollbar-none">
+                <button
+                  onClick={() => setSelectedDate(null)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition border ${
+                    selectedDate === null
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  All Days ({data?.slots?.length || 0})
+                </button>
+                {sortedDates.map((dStr) => {
+                  const firstSlot = slotsByDate[dStr][0];
+                  const dObj = new Date(firstSlot.start_at);
+                  const dayName = dObj.toLocaleDateString([], { weekday: 'short', timeZone: guestTz });
+                  const dayNum = dObj.toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: guestTz });
+                  const isSelected = selectedDate === dStr;
+                  return (
+                    <button
+                      key={dStr}
+                      onClick={() => setSelectedDate(dStr)}
+                      className={`px-3.5 py-1.5 rounded-xl text-center whitespace-nowrap transition border ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="text-[10px] font-bold uppercase tracking-wider">{dayName}</div>
+                      <div className="text-xs font-semibold">{dayNum}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {filteredDates.length === 0 ? (
               <div className="p-12 text-center text-slate-500 bg-slate-50 border border-slate-200 rounded-2xl">
                 <Calendar className="w-8 h-8 text-slate-400 mx-auto mb-2" />
                 <div className="font-semibold text-slate-700">No Slots Available</div>
-                <p className="text-xs text-slate-500 mt-1">
-                  All slots for this period are booked or fall outside the host's booking horizon.
+                <p className="text-xs text-slate-500 mt-1 mb-4">
+                  All slots for this period are booked or fall outside the host booking horizon.
                 </p>
+                <button
+                  onClick={() => {
+                    setWaitlistSlotTime(new Date().toISOString());
+                    setShowWaitlistModal(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Join Waitlist for Next Opening</span>
+                </button>
               </div>
             ) : (
               <div className="space-y-6">
@@ -754,7 +822,7 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
                   });
 
                   return (
-                    <div key={dateStr} className="border border-slate-200/80 rounded-2xl p-5 bg-slate-50/50 hover:bg-slate-50/80 transition">
+                    <div key={dateStr} className="border border-slate-200 rounded-2xl p-5 bg-slate-50/50 hover:bg-slate-50/80 transition">
                       <div className="font-bold text-slate-800 text-sm mb-3 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
@@ -772,7 +840,16 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
                             <button
                               key={slot.start_at}
                               onClick={() => handleSelectSlot(slot)}
-                              className="p-3 border border-slate-200/90 rounded-xl bg-white hover:border-indigo-500 hover:bg-indigo-50/60 hover:shadow-sm text-center transition group relative"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  handleSelectSlot(slot);
+                                }
+                              }}
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`Reserve slot at ${slot.display_start} on ${formattedDate}`}
+                              className="p-3 border border-slate-200 rounded-xl bg-white hover:border-indigo-600 hover:bg-indigo-50/60 hover:shadow-2xs text-center transition group relative focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                             >
                               <div className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition">
                                 {slot.display_start}
@@ -790,11 +867,90 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
                     </div>
                   );
                 })}
+
+                {/* Priority Waitlist CTA */}
+                <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+                  <span>Need an alternative time? Register on the priority waitlist.</span>
+                  <button
+                    onClick={() => {
+                      setWaitlistSlotTime(data?.slots?.[0]?.start_at || new Date().toISOString());
+                      setShowWaitlistModal(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-semibold transition"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Join Priority Waitlist</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Waitlist Modal */}
+      {showWaitlistModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-xl animate-in zoom-in-95">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <UserPlus className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">Join Priority Waitlist</h3>
+              </div>
+              <button
+                onClick={() => setShowWaitlistModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              If an attendee cancels or reschedules, you will be automatically placed in line and offered a 10 minute priority hold.
+            </p>
+
+            {waitlistSuccessMessage ? (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-medium">
+                {waitlistSuccessMessage}
+              </div>
+            ) : (
+              <form onSubmit={handleJoinWaitlist} className="space-y-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Your Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={waitlistName}
+                    onChange={(e) => setWaitlistName(e.target.value)}
+                    placeholder="Alex Morgan"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    value={waitlistEmail}
+                    onChange={(e) => setWaitlistEmail(e.target.value)}
+                    placeholder="alex@company.com"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={submittingWaitlist}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shadow-sm transition disabled:opacity-50"
+                >
+                  {submittingWaitlist ? 'Registering...' : 'Register for Waitlist'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

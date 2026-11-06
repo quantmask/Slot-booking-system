@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   User, Calendar, Clock, Settings, LogOut, Plus, Trash2, CheckCircle, 
   AlertCircle, RefreshCw, Copy, Check, ExternalLink, ShieldCheck, Zap, 
-  Search, Users, Activity, Sliders, CalendarDays, Lock
+  Search, Users, Activity, Sliders, CalendarDays, Lock, Code, Radio, UserCheck, X, Link2
 } from 'lucide-react';
 
 const COMMON_TIMEZONES = [
@@ -33,7 +33,7 @@ const WEEKDAYS = [
 export default function HostDashboard() {
   const [host, setHost] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'bookings' | 'events' | 'availability' | 'profile'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'events' | 'availability' | 'calendars' | 'webhooks' | 'waitlist' | 'profile'>('bookings');
 
   // Authentication Form States
   const [email, setEmail] = useState('');
@@ -41,13 +41,29 @@ export default function HostDashboard() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [submittingLogin, setSubmittingLogin] = useState(false);
 
-  // Data states
+  // Core Data states
   const [bookings, setBookings] = useState<any[]>([]);
   const [eventTypes, setEventTypes] = useState<any[]>([]);
   const [availability, setAvailability] = useState<{ weekly: any[]; overrides: any[] }>({ weekly: [], overrides: [] });
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+
+  // Optional Extension Data states
+  const [busyTimes, setBusyTimes] = useState<any[]>([]);
+  const [newBusyTitle, setNewBusyTitle] = useState('External Focus');
+  const [newBusyStart, setNewBusyStart] = useState('');
+  const [newBusyEnd, setNewBusyEnd] = useState('');
+  const [icsText, setIcsText] = useState('');
+
+  const [webhooks, setWebhooks] = useState<any[]>([]);
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [webhookLogs, setWebhookLogs] = useState<any[]>([]);
+  const [copiedSecret, setCopiedSecret] = useState(false);
+
+  const [waitlists, setWaitlists] = useState<any[]>([]);
+  const [embedModalSlug, setEmbedModalSlug] = useState<string | null>(null);
+  const [copiedEmbed, setCopiedEmbed] = useState(false);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,10 +81,6 @@ export default function HostDashboard() {
     min_notice_hours: 4,
     horizon_days: 30,
   });
-
-  // Host Cancel State
-  const [cancelModalBookingId, setCancelModalBookingId] = useState<string | null>(null);
-  const [hostCancelReason, setHostCancelReason] = useState('');
 
   const checkAuth = async () => {
     setLoading(true);
@@ -94,15 +106,23 @@ export default function HostDashboard() {
   const loadDashboardData = async () => {
     if (!host) return;
     try {
-      const [bRes, eRes, aRes] = await Promise.all([
+      const [bRes, eRes, aRes, busyRes, hookRes, hookLogRes, waitRes] = await Promise.all([
         fetch('/api/host/bookings'),
         fetch('/api/host/event-types'),
         fetch('/api/host/availability'),
+        fetch('/api/host/busy-times'),
+        fetch('/api/host/webhooks'),
+        fetch('/api/host/webhooks/logs'),
+        fetch('/api/host/waitlists'),
       ]);
 
       if (bRes.ok) setBookings(await bRes.json());
       if (eRes.ok) setEventTypes(await eRes.json());
       if (aRes.ok) setAvailability(await aRes.json());
+      if (busyRes.ok) setBusyTimes(await busyRes.json());
+      if (hookRes.ok) setWebhooks(await hookRes.json());
+      if (hookLogRes.ok) setWebhookLogs(await hookLogRes.json());
+      if (waitRes.ok) setWaitlists(await waitRes.json());
     } catch (e: any) {
       console.error(e);
     }
@@ -193,21 +213,73 @@ export default function HostDashboard() {
     }
   };
 
-  const handleArchiveEvent = async (id: string) => {
-    if (!confirm('Are you sure you want to archive this event type?')) return;
+  // Extension: External Busy Times Handlers
+  const handleCreateBusyTime = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
-      const res = await fetch(`/api/host/event-types/${id}`, {
-        method: 'PUT',
+      const res = await fetch('/api/host/busy-times', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_archived: true }),
+        body: JSON.stringify({
+          title: newBusyTitle,
+          start_at: new Date(newBusyStart).toISOString(),
+          end_at: new Date(newBusyEnd).toISOString(),
+        }),
       });
       if (res.ok) {
-        setActionSuccess('Event type archived');
-        setTimeout(() => setActionSuccess(null), 2500);
+        setActionSuccess('External busy window created');
+        setNewBusyStart('');
+        setNewBusyEnd('');
         loadDashboardData();
+        setTimeout(() => setActionSuccess(null), 2500);
       }
-    } catch (e: any) {
-      setActionError(e.message);
+    } catch (err: any) {
+      setActionError(err.message);
+    }
+  };
+
+  const handleImportIcs = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/host/busy-times/import-ics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ icsContent: icsText }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setActionSuccess(`Imported ${d.imported} external calendar blocks`);
+        setIcsText('');
+        loadDashboardData();
+        setTimeout(() => setActionSuccess(null), 2500);
+      }
+    } catch (err: any) {
+      setActionError(err.message);
+    }
+  };
+
+  const handleDeleteBusyTime = async (id: string) => {
+    await fetch(`/api/host/busy-times/${id}`, { method: 'DELETE' });
+    loadDashboardData();
+  };
+
+  // Extension: Webhook Handlers
+  const handleSaveWebhook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/host/webhooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: webhookUrl }),
+      });
+      if (res.ok) {
+        setActionSuccess('Webhook registered with HMAC secret');
+        setWebhookUrl('');
+        loadDashboardData();
+        setTimeout(() => setActionSuccess(null), 2500);
+      }
+    } catch (err: any) {
+      setActionError(err.message);
     }
   };
 
@@ -231,15 +303,13 @@ export default function HostDashboard() {
     return matchesSearch && matchesStatus;
   });
 
-  // Calculate Metrics
   const totalBookings = bookings.length;
   const confirmedCount = bookings.filter((b) => b.status === 'confirmed').length;
-  const cancelledCount = bookings.filter((b) => b.status === 'cancelled').length;
 
   if (loading) {
     return (
       <div className="py-20 text-center text-slate-500 flex items-center justify-center gap-2">
-        <RefreshCw className="w-5 h-5 animate-spin text-indigo-600" />
+        <RefreshCw className="w-5 h-5 animate-spin text-slate-700" />
         <span>Authenticating host session...</span>
       </div>
     );
@@ -248,14 +318,14 @@ export default function HostDashboard() {
   // SIGN IN VIEW
   if (!host) {
     return (
-      <div className="max-w-md mx-auto bg-white border border-slate-200/90 rounded-3xl p-8 shadow-xl">
+      <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-3xl p-8 shadow-sm">
         <div className="text-center mb-6">
-          <div className="w-14 h-14 bg-gradient-to-tr from-indigo-600 to-purple-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-indigo-500/20">
-            <Lock className="w-7 h-7" />
+          <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center mx-auto mb-3">
+            <Lock className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Host Sign In</h2>
+          <h2 className="text-2xl font-bold text-slate-900">Host Sign In</h2>
           <p className="text-xs text-slate-500 mt-1">
-            Sign in to manage your appointments, schedule availability, and event templates
+            Sign in to manage your appointments, availability, and event templates
           </p>
         </div>
 
@@ -268,7 +338,7 @@ export default function HostDashboard() {
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
               Work Email
             </label>
             <input
@@ -277,12 +347,12 @@ export default function HostDashboard() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="alex.wright@slotbook.io"
-              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-slate-900 focus:outline-none"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
               Password
             </label>
             <input
@@ -291,46 +361,46 @@ export default function HostDashboard() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••••••"
-              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-slate-900 focus:outline-none"
             />
           </div>
 
           <button
             type="submit"
             disabled={submittingLogin}
-            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-indigo-500/20 transition disabled:opacity-50"
+            className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
           >
-            {submittingLogin ? 'Authenticating...' : 'Sign In to Dashboard'}
+            {submittingLogin ? 'Authenticating...' : 'Sign In'}
           </button>
         </form>
 
         <div className="mt-6 pt-5 border-t border-slate-100 text-center">
           <p className="text-xs text-slate-400">
-            Protected by enterprise session authentication & conflict prevention.
+            Protected by enterprise session authentication.
           </p>
         </div>
       </div>
     );
   }
 
-  // AUTHENTICATED EXECUTIVE DASHBOARD
+  // AUTHENTICATED DASHBOARD
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Top Executive Header */}
-      <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* Top Header */}
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 bg-gradient-to-tr from-indigo-600 to-purple-600 text-white rounded-2xl flex items-center justify-center font-bold text-xl shadow-md shadow-indigo-500/20">
+          <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-bold text-lg">
             {(host.name || host.slug).charAt(0).toUpperCase()}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{host.name || 'Executive Host'}</h1>
-              <span className="text-xs px-2.5 py-0.5 bg-indigo-50 text-indigo-700 font-mono font-semibold rounded-full border border-indigo-200">
+              <h1 className="text-xl font-bold text-slate-900">{host.name || 'Executive Host'}</h1>
+              <span className="text-xs px-2.5 py-0.5 bg-slate-100 text-slate-700 font-mono font-medium rounded-full">
                 @{host.slug}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              {host.email} • Primary Timezone: <span className="font-semibold text-slate-700">{host.timezone}</span>
+              {host.email} | Primary Timezone: <span className="font-semibold text-slate-700">{host.timezone}</span>
             </p>
           </div>
         </div>
@@ -351,64 +421,30 @@ export default function HostDashboard() {
         </div>
       </div>
 
-      {/* KPI Metrics Grid (Advantage Feature) */}
+      {/* KPI Metrics Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Bookings</span>
-            <Activity className="w-4 h-4 text-indigo-600" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">{totalBookings}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Recorded in database</div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Bookings</span>
+          <div className="text-2xl font-bold text-slate-900 mt-1">{totalBookings}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Recorded in calendar</div>
         </div>
 
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">Confirmed</span>
-            <CheckCircle className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-emerald-600">{confirmedCount}</div>
-          <div className="text-[11px] text-emerald-600/80 mt-1">Active scheduled sessions</div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
+          <span className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">Confirmed</span>
+          <div className="text-2xl font-bold text-emerald-600 mt-1">{confirmedCount}</div>
+          <div className="text-[11px] text-emerald-600/70 mt-0.5">Active upcoming sessions</div>
         </div>
 
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Event Types</span>
-            <Sliders className="w-4 h-4 text-purple-600" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">{eventTypes.length}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Active public templates</div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Event Types</span>
+          <div className="text-2xl font-bold text-slate-900 mt-1">{eventTypes.length}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Public booking templates</div>
         </div>
 
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">Weekly Hours</span>
-            <Clock className="w-4 h-4 text-indigo-600" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-indigo-600">40h</div>
-          <div className="text-[11px] text-slate-500 mt-1">Mon–Fri (09:00–17:00)</div>
-        </div>
-      </div>
-
-      {/* Real-time Status Bar */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4 border border-slate-800 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs font-bold text-indigo-300 uppercase tracking-wider">Real-Time Booking Protection</div>
-            <div className="text-sm font-semibold text-white">Live Calendar Synchronization & Conflict Prevention Active</div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 rounded-md border border-emerald-500/30 flex items-center gap-1.5 font-medium">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Webhook Dispatcher Online
-          </span>
-          <span className="px-2.5 py-1 bg-indigo-500/20 text-indigo-300 rounded-md border border-indigo-500/30 font-medium">
-            Automated Hold Sweeper Online
-          </span>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
+          <span className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">Weekly Schedule</span>
+          <div className="text-2xl font-bold text-indigo-600 mt-1">40h</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Mon to Fri, 9am to 5pm</div>
         </div>
       </div>
 
@@ -420,52 +456,51 @@ export default function HostDashboard() {
       )}
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200/90 gap-6 text-sm font-semibold">
-        {(['bookings', 'events', 'availability', 'profile'] as const).map((tab) => (
+      <div className="flex border-b border-slate-200 gap-6 text-xs sm:text-sm font-semibold overflow-x-auto">
+        {(['bookings', 'events', 'availability', 'calendars', 'webhooks', 'waitlist', 'profile'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`pb-3 capitalize border-b-2 transition flex items-center gap-2 ${
+            className={`pb-3 capitalize border-b-2 transition whitespace-nowrap flex items-center gap-2 ${
               activeTab === tab
-                ? 'border-indigo-600 text-indigo-600 font-bold'
+                ? 'border-slate-900 text-slate-900 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             {tab === 'bookings' && <Calendar className="w-4 h-4" />}
             {tab === 'events' && <Sliders className="w-4 h-4" />}
             {tab === 'availability' && <Clock className="w-4 h-4" />}
+            {tab === 'calendars' && <CalendarDays className="w-4 h-4" />}
+            {tab === 'webhooks' && <Radio className="w-4 h-4" />}
+            {tab === 'waitlist' && <UserCheck className="w-4 h-4" />}
             {tab === 'profile' && <Settings className="w-4 h-4" />}
-            <span>{tab}</span>
+            <span>{tab === 'calendars' ? 'External Busy Times' : tab}</span>
           </button>
         ))}
       </div>
 
-      {/* TAB 1: BOOKINGS DIRECTORY */}
+      {/* TAB 1: BOOKINGS */}
       {activeTab === 'bookings' && (
-        <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-sm space-y-5">
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Reservations & Appointments</h2>
-              <p className="text-xs text-slate-500">Live booking records synchronized automatically with your calendar.</p>
+              <h2 className="text-base font-bold text-slate-900">Reservations</h2>
+              <p className="text-xs text-slate-500">Live booking records synchronized with your calendar.</p>
             </div>
 
-            {/* Search & Filter Bar */}
-            <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-60">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-                <input
-                  type="text"
-                  placeholder="Search guest or email..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                />
-              </div>
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <input
+                type="text"
+                placeholder="Search guest or email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="px-3 py-1.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-slate-900 focus:outline-none sm:w-56"
+              />
 
               <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-medium">
                 <button
                   onClick={() => setStatusFilter('all')}
-                  className={`px-2.5 py-1 rounded-lg transition ${statusFilter === 'all' ? 'bg-white font-bold text-indigo-600 shadow-2xs' : 'text-slate-600'}`}
+                  className={`px-2.5 py-1 rounded-lg transition ${statusFilter === 'all' ? 'bg-white font-bold text-slate-900 shadow-2xs' : 'text-slate-600'}`}
                 >
                   All
                 </button>
@@ -486,27 +521,26 @@ export default function HostDashboard() {
           </div>
 
           {filteredBookings.length === 0 ? (
-            <div className="p-10 text-center text-slate-500 bg-slate-50 border border-slate-200/80 rounded-2xl">
-              <Calendar className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+            <div className="p-10 text-center text-slate-500 bg-slate-50 border border-slate-200 rounded-2xl">
+              <Calendar className="w-7 h-7 text-slate-400 mx-auto mb-2" />
               <div className="font-semibold text-slate-700">No matching reservations found</div>
-              <p className="text-xs text-slate-500 mt-1">Try clearing your search query or book a test slot from the homepage.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-2xl border border-slate-200/80">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-bold uppercase tracking-wider">
-                    <th className="py-3 px-4">Guest Name & Email</th>
-                    <th className="py-3 px-4">Session Type</th>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                    <th className="py-3 px-4">Guest</th>
+                    <th className="py-3 px-4">Session</th>
                     <th className="py-3 px-4">Scheduled Time ({host.timezone})</th>
                     <th className="py-3 px-4">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredBookings.map((b) => (
-                    <tr key={b.id} className="hover:bg-slate-50/60 transition">
+                    <tr key={b.id} className="hover:bg-slate-50 transition">
                       <td className="py-3.5 px-4 font-semibold text-slate-900">
-                        {b.guest_name || 'Anonymous Hold'}
+                        {b.guest_name || 'Anonymous'}
                         <div className="text-[11px] text-slate-500 font-normal">{b.guest_email || '—'}</div>
                       </td>
                       <td className="py-3.5 px-4 text-slate-700 font-medium">{b.event_name}</td>
@@ -521,10 +555,8 @@ export default function HostDashboard() {
                         <span
                           className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                             b.status === 'confirmed'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : b.status === 'held'
-                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-100 text-slate-600'
                           }`}
                         >
                           {b.status}
@@ -541,35 +573,35 @@ export default function HostDashboard() {
 
       {/* TAB 2: EVENT TYPES */}
       {activeTab === 'events' && (
-        <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-sm space-y-6">
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Configured Event Types</h2>
-              <p className="text-xs text-slate-500">Each event template defines durations, capacity, buffer intervals, and horizons.</p>
+              <h2 className="text-base font-bold text-slate-900">Event Types</h2>
+              <p className="text-xs text-slate-500">Durations, buffer protection, and embed codes.</p>
             </div>
             <button
               onClick={() => setShowEventModal(true)}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 flex items-center gap-1.5 shadow-2xs transition"
+              className="px-3.5 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold hover:bg-slate-800 flex items-center gap-1.5 transition"
             >
               <Plus className="w-4 h-4" /> New Event Type
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {eventTypes.map((et) => (
-              <div key={et.id} className="p-5 border border-slate-200 rounded-2xl bg-slate-50/40 hover:border-indigo-300 transition flex flex-col justify-between">
+              <div key={et.id} className="p-5 border border-slate-200 rounded-2xl bg-white hover:border-slate-300 transition flex flex-col justify-between">
                 <div>
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <h3 className="font-bold text-base text-slate-900">{et.name}</h3>
                       <p className="text-xs font-mono text-indigo-600">/{host.slug}/{et.slug}</p>
                     </div>
-                    <span className="px-2 py-0.5 bg-slate-200/70 text-slate-700 text-[10px] font-bold rounded-md">
-                      {et.capacity === 1 ? '1-on-1' : `Group (${et.capacity})`}
+                    <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded-md">
+                      {et.capacity === 1 ? '1 on 1' : `Group (${et.capacity})`}
                     </span>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-slate-200/70 grid grid-cols-3 gap-2 text-xs text-slate-600">
+                  <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-2 text-xs text-slate-600">
                     <div>
                       <span className="text-slate-400 block text-[10px] uppercase font-bold">Duration</span>
                       <span className="font-bold text-slate-800">{et.duration_min} min</span>
@@ -585,14 +617,24 @@ export default function HostDashboard() {
                   </div>
                 </div>
 
-                <div className="mt-5 pt-3 border-t border-slate-200/70 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => copyEventLink(et.slug)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs transition"
-                  >
-                    {copiedSlug === et.slug ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedSlug === et.slug ? 'Copied Link!' : 'Copy Booking Link'}</span>
-                  </button>
+                <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => copyEventLink(et.slug)}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 transition"
+                    >
+                      {copiedSlug === et.slug ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedSlug === et.slug ? 'Copied' : 'Copy Link'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => setEmbedModalSlug(et.slug)}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-200 transition"
+                    >
+                      <Code className="w-3.5 h-3.5" />
+                      <span>Embed Widget</span>
+                    </button>
+                  </div>
 
                   <a
                     href={`/${host.slug}/${et.slug}`}
@@ -600,7 +642,7 @@ export default function HostDashboard() {
                     rel="noopener noreferrer"
                     className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 font-medium"
                   >
-                    <span>View Public Page</span>
+                    <span>View Page</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
@@ -610,77 +652,354 @@ export default function HostDashboard() {
         </div>
       )}
 
-      {/* TAB 3: AVAILABILITY & OVERRIDES */}
+      {/* TAB 3: AVAILABILITY */}
       {activeTab === 'availability' && (
-        <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-sm space-y-6">
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Weekly Business Schedule</h2>
-            <p className="text-xs text-slate-500">Configure recurring weekly availability windows. Mon–Fri 09:00–17:00 active by default.</p>
+            <h2 className="text-base font-bold text-slate-900">Weekly Operating Schedule</h2>
+            <p className="text-xs text-slate-500">Recurring weekly availability windows configured in {host.timezone}.</p>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {WEEKDAYS.map((w) => {
               const activeWin = availability.weekly.find((x) => x.weekday === w.id);
               return (
-                <div key={w.id} className="p-4 border border-slate-200 rounded-2xl flex items-center justify-between bg-slate-50/50">
+                <div key={w.id} className="p-3.5 border border-slate-200 rounded-2xl flex items-center justify-between bg-slate-50/50">
                   <div className="flex items-center gap-3">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                    <span className="font-bold text-sm text-slate-800 w-28">{w.name}</span>
+                    <span className="font-semibold text-sm text-slate-800 w-28">{w.name}</span>
                     <span className="text-xs font-mono text-slate-600 bg-white px-2.5 py-1 rounded-md border border-slate-200">
-                      {activeWin ? `${activeWin.start_time.slice(0, 5)} – ${activeWin.end_time.slice(0, 5)}` : '09:00 – 17:00'}
+                      {activeWin ? `${activeWin.start_time.slice(0, 5)} to ${activeWin.end_time.slice(0, 5)}` : '09:00 to 17:00'}
                     </span>
                   </div>
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                     Active
                   </span>
                 </div>
               );
             })}
           </div>
+        </div>
+      )}
 
-          <div className="pt-4 border-t border-slate-200">
-            <h3 className="text-sm font-bold text-slate-900 mb-2">Configured Date Overrides (Holidays / Days Off)</h3>
-            <div className="p-4 border border-slate-200 rounded-2xl bg-slate-50/50 flex items-center justify-between">
+      {/* TAB 4: EXTERNAL BUSY TIMES (Optional Extension) */}
+      {activeTab === 'calendars' && (
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">External Busy Blocks & Calendar Import</h2>
+            <p className="text-xs text-slate-500">
+              Blocks imported here automatically remove overlapping slots to prevent conflicts with your personal calendar.
+            </p>
+          </div>
+
+          {/* Manual Add Block */}
+          <form onSubmit={handleCreateBusyTime} className="p-5 border border-slate-200 rounded-2xl bg-slate-50/50 space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Add Manual Busy Window</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <span className="font-semibold text-sm text-slate-800">2026-11-20</span>
-                <p className="text-xs text-slate-500">Full Day Off (Vacation Block)</p>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Block Title</label>
+                <input
+                  type="text"
+                  required
+                  value={newBusyTitle}
+                  onChange={(e) => setNewBusyTitle(e.target.value)}
+                  placeholder="e.g. Executive Board Meeting"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-slate-900 focus:outline-none"
+                />
               </div>
-              <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200">
-                Blocked
-              </span>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Start Time (UTC or ISO)</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={newBusyStart}
+                  onChange={(e) => setNewBusyStart(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-slate-900 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">End Time</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={newBusyEnd}
+                  onChange={(e) => setNewBusyEnd(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-slate-900 focus:outline-none"
+                />
+              </div>
             </div>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition"
+            >
+              Add Busy Block
+            </button>
+          </form>
+
+          {/* Paste RFC 5545 .ics Feed */}
+          <form onSubmit={handleImportIcs} className="p-5 border border-slate-200 rounded-2xl bg-slate-50/50 space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Import .ics File or Calendar Feed</h3>
+            <p className="text-xs text-slate-500">Paste your exported Apple Calendar or Google Calendar .ics content:</p>
+            <textarea
+              rows={3}
+              value={icsText}
+              onChange={(e) => setIcsText(e.target.value)}
+              placeholder="BEGIN:VCALENDAR... BEGIN:VEVENT... END:VEVENT... END:VCALENDAR"
+              className="w-full p-3 font-mono text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-slate-900 focus:outline-none"
+            />
+            <button
+              type="submit"
+              disabled={!icsText.trim()}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition disabled:opacity-50"
+            >
+              Import VEVENT Blocks
+            </button>
+          </form>
+
+          {/* List Busy Times */}
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">Active Busy Blocks ({busyTimes.length})</h3>
+            {busyTimes.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">No external busy blocks recorded.</p>
+            ) : (
+              <div className="space-y-2">
+                {busyTimes.map((bt) => (
+                  <div key={bt.id} className="p-3 border border-slate-200 rounded-xl flex items-center justify-between text-xs bg-white">
+                    <div>
+                      <span className="font-bold text-slate-800">{bt.title}</span>
+                      <div className="text-[11px] text-slate-500 font-mono">
+                        {new Date(bt.start_at).toLocaleString([], { timeZone: host.timezone })} to {new Date(bt.end_at).toLocaleString([], { timeZone: host.timezone })}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteBusyTime(bt.id)}
+                      className="p-1 text-slate-400 hover:text-red-600 rounded"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* TAB 4: PROFILE SETTINGS */}
-      {activeTab === 'profile' && (
-        <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-sm space-y-6 max-w-xl">
+      {/* TAB 5: WEBHOOKS & HMAC LOGS (Optional Extension) */}
+      {activeTab === 'webhooks' && (
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Host Profile Settings</h2>
-            <p className="text-xs text-slate-500">Update operating timezone and administrative configurations.</p>
+            <h2 className="text-base font-bold text-slate-900">Custom Webhooks & HMAC Signatures</h2>
+            <p className="text-xs text-slate-500">
+              Receive signed booking events directly to your endpoint with cryptographic SHA-256 HMAC verification.
+            </p>
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Host Operating Timezone
-              </label>
-              <select
-                value={host.timezone}
-                onChange={(e) => handleUpdateProfile(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          <form onSubmit={handleSaveWebhook} className="p-5 border border-slate-200 rounded-2xl bg-slate-50/50 space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Register Endpoint</h3>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                required
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                placeholder="https://api.yourdomain.com/webhooks/slotbook"
+                className="flex-1 px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-slate-900 focus:outline-none"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition"
               >
-                {COMMON_TIMEZONES.map((tz) => (
-                  <option key={tz} value={tz}>
-                    {tz}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-500 mt-1">
-                Slots will be calculated against this timezone prior to guest projection.
-              </p>
+                Register Webhook
+              </button>
             </div>
+          </form>
+
+          {/* Configured Webhooks */}
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">Configured Endpoints</h3>
+            {webhooks.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">No webhooks registered.</p>
+            ) : (
+              <div className="space-y-3">
+                {webhooks.map((wh) => (
+                  <div key={wh.id} className="p-4 border border-slate-200 rounded-xl bg-white space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-900 font-mono">{wh.url}</span>
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-semibold rounded-full text-[10px]">Active</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <span className="text-[11px] font-semibold text-slate-600">HMAC Secret:</span>
+                      <code className="bg-slate-100 px-2 py-0.5 rounded font-mono text-[11px] text-slate-800">{wh.secret_key}</code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(wh.secret_key);
+                          setCopiedSecret(true);
+                          setTimeout(() => setCopiedSecret(false), 2000);
+                        }}
+                        className="text-indigo-600 hover:text-indigo-800 text-[11px] font-medium"
+                      >
+                        {copiedSecret ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Delivery Logs */}
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">Recent Delivery Log</h3>
+            {webhookLogs.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">No webhook attempts recorded yet.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                    <tr>
+                      <th className="py-2.5 px-3">Event Type</th>
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3">Latency</th>
+                      <th className="py-2.5 px-3">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {webhookLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-slate-50 font-mono text-[11px]">
+                        <td className="py-2.5 px-3 font-semibold text-slate-800">{log.event_type}</td>
+                        <td className="py-2.5 px-3">
+                          <span className={`px-2 py-0.5 rounded font-bold ${log.status_code === 200 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                            {log.status_code || 'Error'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-600">{log.delivery_duration_ms}ms</td>
+                        <td className="py-2.5 px-3 text-slate-400">{new Date(log.created_at).toLocaleTimeString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 6: WAITLIST (Optional Extension) */}
+      {activeTab === 'waitlist' && (
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">Session Waitlists</h2>
+            <p className="text-xs text-slate-500">Guests waiting for cancellations. System automatically promotes the next person in line.</p>
+          </div>
+
+          {waitlists.length === 0 ? (
+            <div className="p-10 text-center text-slate-500 bg-slate-50 border border-slate-200 rounded-2xl">
+              <UserCheck className="w-7 h-7 text-slate-400 mx-auto mb-2" />
+              <div className="font-semibold text-slate-700">No active waitlist entries</div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                    <th className="py-3 px-4">Guest</th>
+                    <th className="py-3 px-4">Session Target</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Requested At</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {waitlists.map((w) => (
+                    <tr key={w.id} className="hover:bg-slate-50">
+                      <td className="py-3.5 px-4 font-semibold text-slate-900">
+                        {w.guest_name}
+                        <div className="text-[11px] text-slate-500 font-normal">{w.guest_email}</div>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-700">{w.event_name}</td>
+                      <td className="py-3.5 px-4">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          w.status === 'offered' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+                        }`}>
+                          {w.status}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-500 font-mono">
+                        {new Date(w.created_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 7: PROFILE */}
+      {activeTab === 'profile' && (
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5 max-w-xl">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">Profile & Timezone</h2>
+            <p className="text-xs text-slate-500">Operating timezone used to compute availability and business hours.</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Host Timezone
+            </label>
+            <select
+              value={host.timezone}
+              onChange={(e) => handleUpdateProfile(e.target.value)}
+              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-slate-900 focus:outline-none"
+            >
+              {COMMON_TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Embed Modal Dialog (Optional Extension: Embeddable Widget) */}
+      {embedModalSlug && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 shadow-xl animate-in zoom-in-95">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Code className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-base font-bold text-slate-900">Embed Booking Widget</h3>
+              </div>
+              <button
+                onClick={() => setEmbedModalSlug(null)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              Copy and paste this snippet into your website or React app to embed the booking interface directly:
+            </p>
+
+            <div className="p-3 bg-slate-900 text-slate-200 rounded-xl font-mono text-xs overflow-x-auto mb-4 border border-slate-800">
+              {`<iframe src="${window.location.origin}/embed/${host.slug}/${embedModalSlug}" width="100%" height="700" frameborder="0"></iframe>`}
+            </div>
+
+            <button
+              onClick={() => {
+                const code = `<iframe src="${window.location.origin}/embed/${host.slug}/${embedModalSlug}" width="100%" height="700" frameborder="0"></iframe>`;
+                navigator.clipboard.writeText(code);
+                setCopiedEmbed(true);
+                setTimeout(() => setCopiedEmbed(false), 2000);
+              }}
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+            >
+              {copiedEmbed ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              <span>{copiedEmbed ? 'Copied to Clipboard!' : 'Copy Embed Code'}</span>
+            </button>
           </div>
         </div>
       )}

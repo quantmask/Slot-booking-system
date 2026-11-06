@@ -41,6 +41,12 @@ export async function getSlots(req: FastifyRequest, reply: FastifyReply) {
     GROUP BY s.id
   `, [host.id]);
 
+  // Optional Extension: External Busy Times
+  const busyTimesRes = await pool.query(
+    'SELECT start_at, end_at FROM external_busy_times WHERE host_id = $1',
+    [host.id]
+  );
+
   const slots = generateSlots({
     hostTimezone: host.timezone,
     guestTimezone: guestTz,
@@ -58,6 +64,7 @@ export async function getSlots(req: FastifyRequest, reply: FastifyReply) {
     weeklyAvailability: weeklyRes.rows,
     dateOverrides: overrideRes.rows,
     existingSessions: sessionsRes.rows,
+    externalBusyTimes: busyTimesRes.rows,
     fromUtc: queryParams.from,
     toUtc: queryParams.to,
   });
@@ -142,5 +149,65 @@ export async function cancelBooking(req: FastifyRequest, reply: FastifyReply) {
 
   const result = await BookingService.cancelBooking(token, reason);
   return reply.send(result);
+}
+
+/**
+ * Optional Extension: Direct .ics calendar invite download
+ */
+export async function getBookingIcs(req: FastifyRequest, reply: FastifyReply) {
+  const { token } = req.params as { token: string };
+  const booking = await BookingService.getBookingByToken(token);
+
+  const formatUtc = (d: Date | string) =>
+    new Date(d).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+  const nowStr = formatUtc(new Date());
+  const startStr = formatUtc(booking.start_at);
+  const endStr = formatUtc(booking.end_at);
+
+  const icsLines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Slotbook Enterprise Scheduler//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:REQUEST',
+    'BEGIN:VEVENT',
+    `UID:${booking.id}@slotbook.io`,
+    `DTSTAMP:${nowStr}`,
+    `DTSTART:${startStr}`,
+    `DTEND:${endStr}`,
+    `SUMMARY:${booking.event_name}`,
+    `DESCRIPTION:Confirmed session with @${booking.host_slug}. Guest: ${booking.guest_name}`,
+    'STATUS:CONFIRMED',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ];
+
+  reply.header('Content-Type', 'text/calendar; charset=utf-8');
+  reply.header('Content-Disposition', `attachment; filename="${booking.event_slug || 'booking'}.ics"`);
+  return reply.send(icsLines.join('\r\n'));
+}
+
+/**
+ * Optional Extension: Waitlist registration for fully booked slots
+ */
+export async function joinWaitlist(req: FastifyRequest, reply: FastifyReply) {
+  const { host: hostSlug, slug: eventSlug } = req.params as { host: string; slug: string };
+  const WaitlistSchema = z.object({
+    slotStart: z.string().min(1, 'slotStart is required'),
+    guestName: z.string().min(1, 'guestName is required'),
+    guestEmail: z.string().email('Valid guestEmail is required'),
+  });
+  const parsed = WaitlistSchema.parse(req.body);
+
+  const result = await BookingService.joinWaitlist({
+    hostSlug,
+    eventSlug,
+    slotStart: parsed.slotStart,
+    guestName: parsed.guestName,
+    guestEmail: parsed.guestEmail,
+  });
+
+  return reply.status(201).send(result);
 }
 

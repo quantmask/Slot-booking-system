@@ -5,15 +5,26 @@ import {
   confirmHold,
   releaseHold,
   getBookingByToken,
+  getBookingIcs,
   rescheduleBooking,
   cancelBooking,
+  joinWaitlist,
 } from '../controllers/bookingController.js';
 import { pool } from '../config/db.js';
 import { slotEventEmitter } from '../lib/eventBus.js';
+import { rateLimiter, botHoldProtector } from '../middleware/abuseProtection.js';
 
 export async function publicRoutes(app: FastifyInstance) {
+  // Optional Extension: Abuse Protection (Rate limiting on public booking endpoints)
+  app.addHook('onRequest', async (req, reply) => {
+    if (req.url.startsWith('/api/hosts') || req.url.startsWith('/api/holds')) {
+      await rateLimiter(req, reply);
+    }
+  });
+
   // Public booking endpoints
   app.get('/api/hosts/:host/events/:slug/slots', getSlots);
+  app.post('/api/hosts/:host/events/:slug/slots/waitlist', joinWaitlist);
 
   // Real-time Server-Sent Events (SSE) Stream for Instant Slot Sync
   app.get('/api/hosts/:host/events/:slug/slots/stream', (req, reply) => {
@@ -45,21 +56,27 @@ export async function publicRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/api/holds', createHold);
+  app.post('/api/holds', { preHandler: botHoldProtector }, createHold);
   app.post('/api/holds/:id/confirm', confirmHold);
   app.post('/api/holds/:id/release', releaseHold);
   app.delete('/api/holds/:id', releaseHold);
   app.get('/api/bookings/:token', getBookingByToken);
+  app.get('/api/bookings/:token/ics', getBookingIcs);
   app.post('/api/bookings/:token/reschedule', rescheduleBooking);
   app.post('/api/bookings/:token/cancel', cancelBooking);
 
   // Health and Observability (Optional Extension)
   app.get('/health', async (_req, reply) => {
     try {
-      const [dbCheck, notifStats, holdsStats] = await Promise.all([
+      const [dbCheck, notifStats, holdsStats, totalBookingsRes, confirmedBookingsRes, expiredHoldsRes, lagRes, waitlistRes] = await Promise.all([
         pool.query('SELECT 1 AS ok'),
         pool.query("SELECT COUNT(*) AS pending_count FROM notifications WHERE status = 'pending'"),
         pool.query("SELECT COUNT(*) AS active_holds FROM bookings WHERE status = 'held' AND hold_expires_at > NOW()"),
+        pool.query('SELECT COUNT(*) AS total FROM bookings'),
+        pool.query("SELECT COUNT(*) AS confirmed FROM bookings WHERE status = 'confirmed'"),
+        pool.query("SELECT COUNT(*) AS expired FROM bookings WHERE status = 'expired'"),
+        pool.query("SELECT COALESCE(ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) * 1000), 0) AS lag_ms FROM notifications WHERE status = 'pending'"),
+        pool.query("SELECT COUNT(*) AS waiting FROM waitlists WHERE status = 'waiting'"),
       ]);
 
       return reply.send({
@@ -72,8 +89,13 @@ export async function publicRoutes(app: FastifyInstance) {
           waiting: pool.waitingCount,
         },
         metrics: {
-          pending_notifications: parseInt(notifStats.rows[0].pending_count, 10),
+          total_bookings: parseInt(totalBookingsRes.rows[0].total, 10),
+          confirmed_bookings: parseInt(confirmedBookingsRes.rows[0].confirmed, 10),
           active_holds: parseInt(holdsStats.rows[0].active_holds, 10),
+          hold_expiries: parseInt(expiredHoldsRes.rows[0].expired, 10),
+          pending_notifications: parseInt(notifStats.rows[0].pending_count, 10),
+          notification_lag_ms: parseInt(lagRes.rows[0].lag_ms, 10),
+          active_waitlists: parseInt(waitlistRes.rows[0].waiting, 10),
         },
         timestamp: new Date().toISOString(),
       });

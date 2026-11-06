@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { pool } from '../config/db.js';
@@ -244,5 +245,168 @@ export async function hostCancelBooking(req: FastifyRequest, reply: FastifyReply
   } finally {
     client.release();
   }
+}
+
+// ==========================================
+// OPTIONAL EXTENSION CONTROLLERS
+// ==========================================
+
+// 1. External Busy Times
+export async function getBusyTimes(req: FastifyRequest, reply: FastifyReply) {
+  const host = (req as any).authHost;
+  const res = await pool.query(`
+    SELECT id, title, start_at, end_at, created_at
+    FROM external_busy_times
+    WHERE host_id = $1
+    ORDER BY start_at ASC
+  `, [host.id]);
+  return reply.send(res.rows);
+}
+
+export async function createBusyTime(req: FastifyRequest, reply: FastifyReply) {
+  const host = (req as any).authHost;
+  const Schema = z.object({
+    title: z.string().min(1).default('Busy Block'),
+    start_at: z.string().min(1),
+    end_at: z.string().min(1),
+  });
+  const parsed = Schema.parse(req.body);
+
+  const res = await pool.query(`
+    INSERT INTO external_busy_times (host_id, title, start_at, end_at)
+    VALUES ($1, $2, $3::timestamptz, $4::timestamptz)
+    RETURNING *;
+  `, [host.id, parsed.title, parsed.start_at, parsed.end_at]);
+
+  return reply.status(201).send(res.rows[0]);
+}
+
+export async function importIcsBusyTimes(req: FastifyRequest, reply: FastifyReply) {
+  const host = (req as any).authHost;
+  const Schema = z.object({
+    icsContent: z.string().min(1),
+  });
+  const { icsContent } = Schema.parse(req.body);
+
+  // Simple RFC 5545 parser for VEVENT blocks
+  const events = icsContent.split('BEGIN:VEVENT');
+  let importedCount = 0;
+
+  for (let i = 1; i < events.length; i++) {
+    const block = events[i].split('END:VEVENT')[0];
+    const dtstartMatch = block.match(/DTSTART(?:;[^:]+)?:([0-9TZ]+)/);
+    const dtendMatch = block.match(/DTEND(?:;[^:]+)?:([0-9TZ]+)/);
+    const summaryMatch = block.match(/SUMMARY:(.*)/);
+
+    if (dtstartMatch && dtendMatch) {
+      const parseIcsDate = (str: string) => {
+        // e.g. 20261110T090000Z or 20261110T090000
+        const y = str.substring(0, 4);
+        const m = str.substring(4, 6);
+        const d = str.substring(6, 8);
+        const h = str.substring(9, 11) || '00';
+        const min = str.substring(11, 13) || '00';
+        const s = str.substring(13, 15) || '00';
+        return new Date(`${y}-${m}-${d}T${h}:${min}:${s}Z`);
+      };
+
+      try {
+        const start = parseIcsDate(dtstartMatch[1]);
+        const end = parseIcsDate(dtendMatch[1]);
+        const title = summaryMatch ? summaryMatch[1].trim() : 'External Busy Block';
+
+        if (start < end) {
+          await pool.query(`
+            INSERT INTO external_busy_times (host_id, title, start_at, end_at)
+            VALUES ($1, $2, $3, $4)
+          `, [host.id, title, start, end]);
+          importedCount++;
+        }
+      } catch {
+        // Ignore unparseable individual event
+      }
+    }
+  }
+
+  return reply.send({ status: 'ok', imported: importedCount });
+}
+
+export async function deleteBusyTime(req: FastifyRequest, reply: FastifyReply) {
+  const host = (req as any).authHost;
+  const { id } = req.params as { id: string };
+  await pool.query('DELETE FROM external_busy_times WHERE id = $1 AND host_id = $2', [id, host.id]);
+  return reply.send({ status: 'ok' });
+}
+
+// 2. Host Webhooks with HMAC
+export async function getWebhooks(req: FastifyRequest, reply: FastifyReply) {
+  const host = (req as any).authHost;
+  const res = await pool.query(`
+    SELECT id, url, secret_key, is_active, created_at
+    FROM host_webhooks
+    WHERE host_id = $1
+    ORDER BY created_at DESC
+  `, [host.id]);
+  return reply.send(res.rows);
+}
+
+export async function saveWebhook(req: FastifyRequest, reply: FastifyReply) {
+  const host = (req as any).authHost;
+  const Schema = z.object({
+    url: z.string().url('Valid webhook URL is required'),
+  });
+  const { url } = Schema.parse(req.body);
+
+  const secretKey = 'whsec_' + crypto.randomBytes(24).toString('hex');
+  const res = await pool.query(`
+    INSERT INTO host_webhooks (host_id, url, secret_key, is_active)
+    VALUES ($1, $2, $3, TRUE)
+    RETURNING *;
+  `, [host.id, url, secretKey]);
+
+  return reply.status(201).send(res.rows[0]);
+}
+
+export async function getWebhookLogs(req: FastifyRequest, reply: FastifyReply) {
+  const host = (req as any).authHost;
+  const res = await pool.query(`
+    SELECT id, event_id, event_type, url, status_code, error_message, delivery_duration_ms, created_at
+    FROM webhook_logs
+    WHERE host_id = $1
+    ORDER BY created_at DESC
+    LIMIT 30
+  `, [host.id]);
+  return reply.send(res.rows);
+}
+
+// 3. Waitlist & Reminders Inspection
+export async function getHostWaitlists(req: FastifyRequest, reply: FastifyReply) {
+  const host = (req as any).authHost;
+  const res = await pool.query(`
+    SELECT w.id, w.guest_name, w.guest_email, w.status, w.offered_at, w.created_at,
+           s.start_at, s.end_at, et.name AS event_name
+    FROM waitlists w
+    JOIN sessions s ON w.session_id = s.id
+    JOIN event_types et ON s.event_type_id = et.id
+    WHERE s.host_id = $1
+    ORDER BY w.created_at DESC
+  `, [host.id]);
+  return reply.send(res.rows);
+}
+
+export async function getHostReminders(req: FastifyRequest, reply: FastifyReply) {
+  const host = (req as any).authHost;
+  const res = await pool.query(`
+    SELECT r.id, r.reminder_type, r.scheduled_for, r.status, r.sent_at,
+           b.guest_name, b.guest_email, s.start_at, et.name AS event_name
+    FROM reminders r
+    JOIN bookings b ON r.booking_id = b.id
+    JOIN sessions s ON b.session_id = s.id
+    JOIN event_types et ON s.event_type_id = et.id
+    WHERE s.host_id = $1
+    ORDER BY r.scheduled_for DESC
+    LIMIT 50
+  `, [host.id]);
+  return reply.send(res.rows);
 }
 

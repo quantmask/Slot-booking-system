@@ -59,6 +59,36 @@ export class Sweeper {
         RETURNING id;
       `);
 
+      // Optional Extension: Dispatch due reminders (24h and 1h)
+      const dueRemindersRes = await client.query(`
+        SELECT r.id, r.booking_id, r.reminder_type, b.guest_name, b.guest_email, s.start_at, et.name AS event_name
+        FROM reminders r
+        JOIN bookings b ON r.booking_id = b.id
+        JOIN sessions s ON b.session_id = s.id
+        JOIN event_types et ON s.event_type_id = et.id
+        WHERE r.status = 'pending' AND r.scheduled_for <= NOW()
+        FOR UPDATE SKIP LOCKED;
+      `);
+
+      for (const rem of dueRemindersRes.rows) {
+        await client.query(`
+          UPDATE reminders SET status = 'sent', sent_at = NOW() WHERE id = $1
+        `, [rem.id]);
+
+        await client.query(`
+          INSERT INTO notifications (type, payload, status)
+          VALUES ('reminder.sent', $1, 'pending')
+        `, [JSON.stringify({
+          reminder_id: rem.id,
+          booking_id: rem.booking_id,
+          reminder_type: rem.reminder_type,
+          guest_name: rem.guest_name,
+          guest_email: rem.guest_email,
+          event_name: rem.event_name,
+          start_at: rem.start_at.toISOString(),
+        })]);
+      }
+
       await client.query('COMMIT');
       if ((updateRes.rowCount || 0) > 0) {
         notifySlotsChanged();

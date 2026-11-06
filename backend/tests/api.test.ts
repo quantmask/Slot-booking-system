@@ -12,6 +12,10 @@ describe('Fastify REST API Integration Tests', () => {
   beforeAll(async () => {
     await runMigrations();
     await seedDatabase();
+    await pool.query('DELETE FROM notifications;');
+    await pool.query('DELETE FROM bookings;');
+    await pool.query('DELETE FROM sessions;');
+    await pool.query('DELETE FROM idempotency_keys;');
     app = buildServer();
     await app.ready();
   });

@@ -69,7 +69,7 @@ export class BookingService {
     return await withTransaction(async (client) => {
       // Find host
       const hostRes = await client.query(
-        'SELECT id, timezone FROM hosts WHERE slug = $1',
+        'SELECT id, timezone, daily_booking_cap FROM hosts WHERE slug = $1',
         [hostSlug]
       );
       if (hostRes.rows.length === 0) {
@@ -110,6 +110,39 @@ export class BookingService {
       const slotStartDt = DateTime.fromISO(slotStart, { zone: 'utc' });
       if (!slotStartDt.isValid) {
         throw new BookingError('Invalid slotStart ISO timestamp', 400, 'INVALID_SLOT_TIME');
+      }
+
+      // Optional Extension: Daily Booking Cap check
+      const hostLocalDate = slotStartDt.setZone(host.timezone).toISODate();
+      if (event.daily_booking_cap && event.daily_booking_cap > 0) {
+        const dayBookingsRes = await client.query(`
+          SELECT COUNT(*) AS day_count
+          FROM bookings b
+          JOIN sessions s ON b.session_id = s.id
+          WHERE s.host_id = $1
+            AND s.event_type_id = $2
+            AND b.status = 'confirmed'
+            AND (s.start_at AT TIME ZONE $3)::date = $4::date
+        `, [host.id, event.id, host.timezone, hostLocalDate]);
+
+        const dayBookings = parseInt(dayBookingsRes.rows[0].day_count, 10);
+        if (dayBookings >= event.daily_booking_cap) {
+          throw new BookingError(`Daily booking cap of ${event.daily_booking_cap} reached for ${hostLocalDate}`, 409, 'DAILY_CAP_REACHED');
+        }
+      } else if (host.daily_booking_cap && host.daily_booking_cap > 0) {
+        const dayBookingsRes = await client.query(`
+          SELECT COUNT(*) AS day_count
+          FROM bookings b
+          JOIN sessions s ON b.session_id = s.id
+          WHERE s.host_id = $1
+            AND b.status = 'confirmed'
+            AND (s.start_at AT TIME ZONE $2)::date = $3::date
+        `, [host.id, host.timezone, hostLocalDate]);
+
+        const dayBookings = parseInt(dayBookingsRes.rows[0].day_count, 10);
+        if (dayBookings >= host.daily_booking_cap) {
+          throw new BookingError(`Daily booking cap of ${host.daily_booking_cap} reached for ${hostLocalDate}`, 409, 'DAILY_CAP_REACHED');
+        }
       }
 
       // Query DB now() for time checks
@@ -179,6 +212,18 @@ export class BookingService {
           throw new BookingError('Slot conflicts with an existing booking or buffer window', 409, 'SLOT_CONFLICT');
         }
 
+        // Optional Extension: External Busy Times Check
+        const busyConflictRes = await client.query(`
+          SELECT id FROM external_busy_times
+          WHERE host_id = $1
+            AND start_at < $3::timestamptz
+            AND end_at > $2::timestamptz
+        `, [host.id, blockedStartIso, blockedEndIso]);
+
+        if (busyConflictRes.rows.length > 0) {
+          throw new BookingError('Slot conflicts with an external calendar busy block', 409, 'SLOT_CONFLICT');
+        }
+
         // Lazy session creation
         const newSessionRes = await client.query(`
           INSERT INTO sessions (
@@ -246,7 +291,7 @@ export class BookingService {
     return await withTransaction(async (client) => {
       // Find booking and lock it
       const bookingRes = await client.query(`
-        SELECT b.*, s.host_id, s.start_at, s.end_at, et.name AS event_name
+        SELECT b.*, s.host_id, s.event_type_id, s.start_at, s.end_at, et.name AS event_name
         FROM bookings b
         JOIN sessions s ON b.session_id = s.id
         JOIN event_types et ON s.event_type_id = et.id
@@ -283,6 +328,21 @@ export class BookingService {
         throw new BookingError('Hold has expired', 410, 'HOLD_EXPIRED');
       }
 
+      // Optional Extension: Per-Guest Active Booking Limit
+      const guestEmailNormalized = guestEmail.trim().toLowerCase();
+      const perGuestRes = await client.query(`
+        SELECT b.id FROM bookings b
+        JOIN sessions s ON b.session_id = s.id
+        WHERE s.event_type_id = $1
+          AND LOWER(b.guest_email) = $2
+          AND b.status = 'confirmed'
+          AND s.end_at > NOW()
+      `, [booking.event_type_id, guestEmailNormalized]);
+
+      if (perGuestRes.rows.length > 0) {
+        throw new BookingError('Guest already holds an active booking for this event type', 409, 'PER_GUEST_LIMIT_EXCEEDED');
+      }
+
       const token = generateSecureToken();
       const tokenHash = hashToken(token);
 
@@ -294,7 +354,26 @@ export class BookingService {
             token_hash = $3,
             updated_at = NOW()
         WHERE id = $4
-      `, [guestName.trim(), guestEmail.trim().toLowerCase(), tokenHash, holdId]);
+      `, [guestName.trim(), guestEmailNormalized, tokenHash, holdId]);
+
+      // Optional Extension: Schedule Reminders (24h and 1h before start)
+      const sessionStartMs = new Date(booking.start_at).getTime();
+      const remind24h = new Date(sessionStartMs - 24 * 60 * 60 * 1000);
+      const remind1h = new Date(sessionStartMs - 1 * 60 * 60 * 1000);
+      const nowDate = new Date(now);
+
+      if (remind24h > nowDate) {
+        await client.query(`
+          INSERT INTO reminders (booking_id, reminder_type, scheduled_for, status)
+          VALUES ($1, '24h', $2, 'pending')
+        `, [holdId, remind24h]);
+      }
+      if (remind1h > nowDate) {
+        await client.query(`
+          INSERT INTO reminders (booking_id, reminder_type, scheduled_for, status)
+          VALUES ($1, '1h', $2, 'pending')
+        `, [holdId, remind1h]);
+      }
 
       const notificationPayload = {
         booking_id: holdId,
@@ -465,6 +544,29 @@ export class BookingService {
 
       await BookingService.cleanupSessionIfEmpty(client, booking.old_session_id);
 
+      // Optional Extension: Update pending reminders for new slot
+      await client.query(`
+        UPDATE reminders SET status = 'cancelled' WHERE booking_id = $1 AND status = 'pending'
+      `, [booking.id]);
+
+      const newStartMs = new Date(newStartIso).getTime();
+      const newRemind24h = new Date(newStartMs - 24 * 60 * 60 * 1000);
+      const newRemind1h = new Date(newStartMs - 1 * 60 * 60 * 1000);
+      const nowJs = new Date();
+
+      if (newRemind24h > nowJs) {
+        await client.query(`
+          INSERT INTO reminders (booking_id, reminder_type, scheduled_for, status)
+          VALUES ($1, '24h', $2, 'pending')
+        `, [booking.id, newRemind24h]);
+      }
+      if (newRemind1h > nowJs) {
+        await client.query(`
+          INSERT INTO reminders (booking_id, reminder_type, scheduled_for, status)
+          VALUES ($1, '1h', $2, 'pending')
+        `, [booking.id, newRemind1h]);
+      }
+
       const notificationPayload = {
         booking_id: booking.id,
         guest_name: booking.guest_name,
@@ -535,6 +637,51 @@ export class BookingService {
         WHERE id = $2
       `, [reason.trim(), booking.id]);
 
+      // Optional Extension: Cancel pending reminders
+      await client.query(`
+        UPDATE reminders SET status = 'cancelled' WHERE booking_id = $1 AND status = 'pending'
+      `, [booking.id]);
+
+      // Optional Extension: Waitlist Promotion on Cancellation
+      const waitlistRes = await client.query(`
+        SELECT * FROM waitlists
+        WHERE session_id = $1 AND status = 'waiting'
+        ORDER BY created_at ASC
+        LIMIT 1
+        FOR UPDATE
+      `, [booking.session_id]);
+
+      if (waitlistRes.rows.length > 0) {
+        const waitItem = waitlistRes.rows[0];
+        // Create 10-minute priority hold for the next waitlisted guest
+        const waitHoldRes = await client.query(`
+          INSERT INTO bookings (session_id, status, hold_expires_at, guest_name, guest_email)
+          VALUES ($1, 'held', NOW() + INTERVAL '10 minutes', $2, $3)
+          RETURNING id;
+        `, [booking.session_id, waitItem.guest_name, waitItem.guest_email]);
+
+        const waitHoldId = waitHoldRes.rows[0].id;
+        await client.query(`
+          UPDATE waitlists
+          SET status = 'offered', hold_id = $1, offered_at = NOW()
+          WHERE id = $2
+        `, [waitHoldId, waitItem.id]);
+
+        await client.query(`
+          INSERT INTO notifications (type, payload, status)
+          VALUES ('waitlist.offered', $1, 'pending')
+        `, [JSON.stringify({
+          waitlist_id: waitItem.id,
+          session_id: booking.session_id,
+          hold_id: waitHoldId,
+          guest_name: waitItem.guest_name,
+          guest_email: waitItem.guest_email,
+          event_name: booking.event_name,
+          start_at: booking.start_at.toISOString(),
+          claim_ttl_minutes: 10,
+        })]);
+      }
+
       await BookingService.cleanupSessionIfEmpty(client, booking.session_id);
 
       const notificationPayload = {
@@ -596,6 +743,83 @@ export class BookingService {
       notifySlotsChanged();
     }
     return result;
+  }
+
+  /**
+   * Register a guest on the session waitlist (Optional Extension: Waitlist).
+   */
+  static async joinWaitlist(params: {
+    hostSlug: string;
+    eventSlug: string;
+    slotStart: string;
+    guestName: string;
+    guestEmail: string;
+  }) {
+    const { hostSlug, eventSlug, slotStart, guestName, guestEmail } = params;
+
+    return await withTransaction(async (client) => {
+      const hostRes = await client.query('SELECT id FROM hosts WHERE slug = $1', [hostSlug]);
+      if (hostRes.rows.length === 0) throw new BookingError(`Host '${hostSlug}' not found`, 404);
+      const host = hostRes.rows[0];
+
+      const eventRes = await client.query(
+        'SELECT id, name, duration_min FROM event_types WHERE host_id = $1 AND slug = $2',
+        [host.id, eventSlug]
+      );
+      if (eventRes.rows.length === 0) throw new BookingError(`Event '${eventSlug}' not found`, 404);
+      const event = eventRes.rows[0];
+
+      const slotStartDt = DateTime.fromISO(slotStart, { zone: 'utc' });
+      if (!slotStartDt.isValid) throw new BookingError('Invalid slotStart ISO timestamp', 400);
+
+      const slotStartIso = slotStartDt.toISO()!;
+      const slotEndIso = slotStartDt.plus({ minutes: event.duration_min }).toISO()!;
+
+      // Find or create session placeholder
+      const sessionRes = await client.query(`
+        SELECT id FROM sessions
+        WHERE host_id = $1 AND event_type_id = $2 AND start_at = $3::timestamptz AND status = 'active'
+      `, [host.id, event.id, slotStartIso]);
+
+      let sessionId: string;
+      if (sessionRes.rows.length > 0) {
+        sessionId = sessionRes.rows[0].id;
+      } else {
+        const insRes = await client.query(`
+          INSERT INTO sessions (host_id, event_type_id, start_at, end_at, blocked_range, capacity, status)
+          VALUES ($1, $2, $3, $4, tstzrange($3::timestamptz, $4::timestamptz, '[)'), 1, 'active')
+          RETURNING id;
+        `, [host.id, event.id, slotStartIso, slotEndIso]);
+        sessionId = insRes.rows[0].id;
+      }
+
+      // Check duplicate
+      const dup = await client.query(`
+        SELECT id FROM waitlists
+        WHERE session_id = $1 AND LOWER(guest_email) = LOWER($2) AND status = 'waiting'
+      `, [sessionId, guestEmail.trim()]);
+
+      if (dup.rows.length > 0) {
+        throw new BookingError('Guest is already registered on the waitlist for this slot', 400, 'ALREADY_WAITLISTED');
+      }
+
+      const insWait = await client.query(`
+        INSERT INTO waitlists (session_id, guest_name, guest_email, status)
+        VALUES ($1, $2, $3, 'waiting')
+        RETURNING id;
+      `, [sessionId, guestName.trim(), guestEmail.trim().toLowerCase()]);
+
+      const countRes = await client.query(`
+        SELECT COUNT(*) AS pos FROM waitlists WHERE session_id = $1 AND status = 'waiting'
+      `, [sessionId]);
+
+      return {
+        waitlist_id: insWait.rows[0].id,
+        position: parseInt(countRes.rows[0].pos, 10),
+        status: 'waitlisted',
+        message: 'Successfully registered on waitlist. You will receive an offer if a slot opens.',
+      };
+    });
   }
 
   private static async cleanupSessionIfEmpty(client: any, sessionId: string) {

@@ -36,6 +36,12 @@ export interface ExistingSession {
   active_bookings_count: number;
 }
 
+export interface ExternalBusyBlock {
+  start_at: Date | string;
+  end_at: Date | string;
+  title?: string;
+}
+
 export interface GenerateSlotsParams {
   hostTimezone: string;
   guestTimezone?: string;
@@ -43,6 +49,7 @@ export interface GenerateSlotsParams {
   weeklyAvailability: WeeklyWindow[];
   dateOverrides: DateOverride[];
   existingSessions: ExistingSession[];
+  externalBusyTimes?: ExternalBusyBlock[];
   fromUtc?: string | Date;
   toUtc?: string | Date;
   now?: string | Date;
@@ -76,6 +83,7 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
     weeklyAvailability,
     dateOverrides,
     existingSessions,
+    externalBusyTimes = [],
   } = params;
 
   if (!isValidTimezone(hostTimezone)) {
@@ -220,6 +228,18 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
           } else {
             const overlaps = candBlockedStartMs < session.blockedEndMs && candBlockedEndMs > session.blockedStartMs;
             if (overlaps) {
+              isBlocked = true;
+              break;
+            }
+          }
+        }
+
+        // Check against external busy times (Optional Extension: External Busy Times)
+        if (!isBlocked && externalBusyTimes.length > 0) {
+          for (const busy of externalBusyTimes) {
+            const bStart = new Date(busy.start_at).getTime();
+            const bEnd = new Date(busy.end_at).getTime();
+            if (candBlockedStartMs < bEnd && candBlockedEndMs > bStart) {
               isBlocked = true;
               break;
             }

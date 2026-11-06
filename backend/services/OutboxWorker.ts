@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { pool } from '../config/db.js';
 
 export class OutboxWorker {
@@ -93,6 +94,53 @@ export class OutboxWorker {
                   delivered_at = NOW()
               WHERE id = $1;
             `, [event.id]);
+
+            // Optional Extension: Dispatch signed HMAC webhooks to registered host endpoints
+            try {
+              const bookingId = event.payload && typeof event.payload === 'object' ? event.payload.booking_id : null;
+              if (bookingId) {
+                const hostHooksRes = await client.query(`
+                  SELECT hw.id, hw.host_id, hw.url, hw.secret_key
+                  FROM host_webhooks hw
+                  JOIN sessions s ON s.host_id = hw.host_id
+                  JOIN bookings b ON b.session_id = s.id
+                  WHERE b.id = $1 AND hw.is_active = TRUE
+                `, [bookingId]);
+
+                for (const hook of hostHooksRes.rows) {
+                  const hookPayloadStr = JSON.stringify(deliveryPayload);
+                  const signature = crypto.createHmac('sha256', hook.secret_key).update(hookPayloadStr).digest('hex');
+                  const startDelivery = Date.now();
+                  let statusCode: number | null = null;
+                  let errMsg: string | null = null;
+
+                  try {
+                    const hookRes = await fetch(hook.url, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'X-Slotbook-Event-Id': event.id,
+                        'X-Slotbook-Event-Type': event.type,
+                        'X-Slotbook-Signature': `sha256=${signature}`,
+                      },
+                      body: hookPayloadStr,
+                      signal: AbortSignal.timeout(3000),
+                    });
+                    statusCode = hookRes.status;
+                  } catch (hErr: any) {
+                    errMsg = hErr.message;
+                  }
+
+                  const duration = Date.now() - startDelivery;
+                  await client.query(`
+                    INSERT INTO webhook_logs (host_id, event_id, event_type, url, status_code, error_message, delivery_duration_ms)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                  `, [hook.host_id, event.id, event.type, hook.url, statusCode, errMsg, duration]);
+                }
+              }
+            } catch {
+              // Non-blocking for host webhooks
+            }
           } else {
             throw new Error(`Webhook responded with status ${res.status}`);
           }
