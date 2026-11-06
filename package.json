@@ -5,17 +5,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev:server": "tsx watch src/api/server.ts",
-    "dev:client": "vite",
-    "dev": "tsx src/index.ts",
-    "build": "tsc -b && vite build",
-    "db:migrate": "tsx src/db/migrate.ts",
-    "db:seed": "tsx src/db/seed.ts",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:concurrency": "vitest run tests/concurrency.test.ts",
-    "generate:pdf": "node generate_report_pdf.js",
-    "start": "tsx src/index.ts"
+    "dev": "npm run dev --prefix backend",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix backend && npm run build --prefix frontend",
+    "db:migrate": "npm run db:migrate --prefix backend",
+    "db:seed": "npm run db:seed --prefix backend",
+    "test": "npm run test --prefix backend",
+    "test:concurrency": "npm run test:concurrency --prefix backend",
+    "generate:pdf": "node scripts/generate_report_pdf.js",
+    "start": "npm run start --prefix backend"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.5",

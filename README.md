@@ -155,3 +155,4 @@ All requests and responses use JSON. Timestamps are ISO-8601 UTC instants.
 - [x] `README.md` with 60-second UI tour and API spec
 - [x] `AI_LOG.md` documenting key prompts and manual corrections
 - [x] Comprehensive Report PDF matching all 10 required sections
+
