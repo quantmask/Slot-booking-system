@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: slotbook-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: slotbook
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d slotbook"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: slotbook-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      HOST: "0.0.0.0"
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/slotbook"
+      NODE_ENV: production
+      SESSION_SECRET: "slotbook-dev-session-secret-at-least-32-chars-long"
+      WEBHOOK_URL: "http://localhost:3000/api/mock-webhook"
+    ports:
+      - "3000:3000"
+    command: >
+      sh -c "npm run db:migrate && npm run db:seed && npm start"
+
+volumes:
+  pgdata:
