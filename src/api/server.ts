@@ -60,14 +60,28 @@ export function buildServer(): FastifyInstance {
     });
   });
 
-  // Health check
+  // Enhanced Health check with metrics and DB stats (Optional Extension)
   app.get('/health', async (_req, reply) => {
     try {
-      const dbCheck = await pool.query('SELECT 1 AS ok');
+      const [dbCheck, notifStats, holdsStats] = await Promise.all([
+        pool.query('SELECT 1 AS ok'),
+        pool.query("SELECT COUNT(*) AS pending_count FROM notifications WHERE status = 'pending'"),
+        pool.query("SELECT COUNT(*) AS active_holds FROM bookings WHERE status = 'held' AND hold_expires_at > NOW()"),
+      ]);
+
       return reply.send({
         status: 'ok',
         uptime: process.uptime(),
         database: dbCheck.rows.length === 1 ? 'connected' : 'error',
+        pool: {
+          total: pool.totalCount,
+          idle: pool.idleCount,
+          waiting: pool.waitingCount,
+        },
+        metrics: {
+          pending_notifications: parseInt(notifStats.rows[0].pending_count, 10),
+          active_holds: parseInt(holdsStats.rows[0].active_holds, 10),
+        },
         timestamp: new Date().toISOString(),
       });
     } catch (err: any) {
