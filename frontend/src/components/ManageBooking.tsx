@@ -2,61 +2,10 @@ import { useState, useEffect } from 'react';
 import { 
   CheckCircle, RefreshCw, XCircle, Download, CalendarPlus 
 } from 'lucide-react';
+import { downloadIcsFile, getGoogleCalendarUrl } from '../lib/calendar.js';
 
 interface ManageBookingProps {
   token: string;
-}
-
-// Helper to generate and download standard .ics calendar invite
-function downloadIcsFile(event: {
-  title: string;
-  startIso: string;
-  endIso: string;
-  description: string;
-  guestName: string;
-}) {
-  const formatDate = (iso: string) => new Date(iso).toISOString().replace(/-|:|\.\d\d\d/g, '');
-
-  const ics = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Slotbook Enterprise Scheduler//v1.0//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:REQUEST',
-    'BEGIN:VEVENT',
-    `UID:${Date.now()}@slotbook.io`,
-    `DTSTAMP:${formatDate(new Date().toISOString())}`,
-    `DTSTART:${formatDate(event.startIso)}`,
-    `DTEND:${formatDate(event.endIso)}`,
-    `SUMMARY:${event.title}`,
-    `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}`,
-    'LOCATION:Virtual Meeting / Google Meet Room',
-    'STATUS:CONFIRMED',
-    'END:VEVENT',
-    'END:VCALENDAR',
-  ].join('\r\n');
-
-  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${event.title.replace(/\s+/g, '_')}.ics`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-// Helper to generate Google Calendar link
-function getGoogleCalendarUrl(event: {
-  title: string;
-  startIso: string;
-  endIso: string;
-  details: string;
-}) {
-  const format = (iso: string) => new Date(iso).toISOString().replace(/-|:|\.\d\d\d/g, '');
-  const dates = `${format(event.startIso)}/${format(event.endIso)}`;
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${dates}&details=${encodeURIComponent(event.details)}&location=${encodeURIComponent('Virtual Meeting')}`;
 }
 
 export default function ManageBooking({ token }: ManageBookingProps) {
@@ -64,14 +13,12 @@ export default function ManageBooking({ token }: ManageBookingProps) {
   const [booking, setBooking] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Reschedule state
   const [rescheduling, setRescheduling] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<any[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedNewSlot, setSelectedNewSlot] = useState<any | null>(null);
   const [rescheduleSuccess, setRescheduleSuccess] = useState(false);
 
-  // Cancellation state
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [submitting, setSubmitting] = useState(false);

@@ -35,20 +35,16 @@ export async function hostRoutes(app: FastifyInstance) {
     hostScope.get('/api/host/bookings', getHostBookings);
     hostScope.post('/api/host/bookings/:id/cancel', hostCancelBooking);
 
-    // Optional Extension: External Busy Times
     hostScope.get('/api/host/busy-times', getBusyTimes);
     hostScope.post('/api/host/busy-times', createBusyTime);
     hostScope.post('/api/host/busy-times/import-ics', importIcsBusyTimes);
     hostScope.delete('/api/host/busy-times/:id', deleteBusyTime);
 
-    // Optional Extension: Webhooks with HMAC & Delivery Logs
     hostScope.get('/api/host/webhooks', getWebhooks);
     hostScope.post('/api/host/webhooks', saveWebhook);
     hostScope.get('/api/host/webhooks/logs', getWebhookLogs);
 
-    // Optional Extension: Waitlist & Reminders
     hostScope.get('/api/host/waitlists', getHostWaitlists);
     hostScope.get('/api/host/reminders', getHostReminders);
   });
 }
-

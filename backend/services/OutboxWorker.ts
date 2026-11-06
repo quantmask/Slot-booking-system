@@ -95,7 +95,7 @@ export class OutboxWorker {
               WHERE id = $1;
             `, [event.id]);
 
-            // Optional Extension: Dispatch signed HMAC webhooks to registered host endpoints
+            // Dispatch signed HMAC webhooks to registered host endpoints
             try {
               const bookingId = event.payload && typeof event.payload === 'object' ? event.payload.booking_id : null;
               if (bookingId) {

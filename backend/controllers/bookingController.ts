@@ -41,7 +41,6 @@ export async function getSlots(req: FastifyRequest, reply: FastifyReply) {
     GROUP BY s.id
   `, [host.id]);
 
-  // Optional Extension: External Busy Times
   const busyTimesRes = await pool.query(
     'SELECT start_at, end_at FROM external_busy_times WHERE host_id = $1',
     [host.id]
@@ -151,9 +150,6 @@ export async function cancelBooking(req: FastifyRequest, reply: FastifyReply) {
   return reply.send(result);
 }
 
-/**
- * Optional Extension: Direct .ics calendar invite download
- */
 export async function getBookingIcs(req: FastifyRequest, reply: FastifyReply) {
   const { token } = req.params as { token: string };
   const booking = await BookingService.getBookingByToken(token);
@@ -188,9 +184,6 @@ export async function getBookingIcs(req: FastifyRequest, reply: FastifyReply) {
   return reply.send(icsLines.join('\r\n'));
 }
 
-/**
- * Optional Extension: Waitlist registration for fully booked slots
- */
 export async function joinWaitlist(req: FastifyRequest, reply: FastifyReply) {
   const { host: hostSlug, slug: eventSlug } = req.params as { host: string; slug: string };
   const WaitlistSchema = z.object({

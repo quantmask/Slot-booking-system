@@ -13,13 +13,13 @@ export interface EventTypeConfig {
 }
 
 export interface WeeklyWindow {
-  weekday: number; // 1 = Monday, 7 = Sunday (ISO)
-  start_time: string; // "HH:MM:SS" or "HH:MM"
-  end_time: string;   // "HH:MM:SS" or "HH:MM"
+  weekday: number;
+  start_time: string;
+  end_time: string;
 }
 
 export interface DateOverride {
-  date: string; // "YYYY-MM-DD"
+  date: string;
   is_off: boolean;
   start_time?: string | null;
   end_time?: string | null;
@@ -56,11 +56,11 @@ export interface GenerateSlotsParams {
 }
 
 export interface AvailableSlot {
-  start_at: string; // ISO UTC
-  end_at: string;   // ISO UTC
-  display_start: string; // formatted in guest timezone
+  start_at: string;
+  end_at: string;
+  display_start: string;
   display_end: string;
-  guest_date: string; // YYYY-MM-DD in guest timezone for grouping
+  guest_date: string;
   capacity: number;
   seats_left: number;
 }
@@ -100,7 +100,6 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
   const minNoticeThreshold = nowDt.plus({ hours: eventType.min_notice_hours });
   const horizonThreshold = nowDt.plus({ days: eventType.horizon_days });
 
-  // Determine query range
   const queryStart = params.fromUtc 
     ? DateTime.fromISO(typeof params.fromUtc === 'string' ? params.fromUtc : params.fromUtc.toISOString()).toUTC()
     : nowDt;
@@ -108,7 +107,6 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
     ? DateTime.fromISO(typeof params.toUtc === 'string' ? params.toUtc : params.toUtc.toISOString()).toUTC()
     : horizonThreshold;
 
-  // Clamping
   const effectiveStart = queryStart > minNoticeThreshold ? queryStart : minNoticeThreshold;
   const effectiveEnd = queryEnd < horizonThreshold ? queryEnd : horizonThreshold;
 
@@ -116,32 +114,23 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
     return [];
   }
 
-  // Pre-process existing sessions into UTC milliseconds
-  const parsedSessions = existingSessions.map(s => {
-    const startMs = new Date(s.start_at).getTime();
-    const endMs = new Date(s.end_at).getTime();
-    const blockedStartMs = new Date(s.blocked_start).getTime();
-    const blockedEndMs = new Date(s.blocked_end).getTime();
-    return {
-      id: s.id,
-      eventTypeId: s.event_type_id,
-      startMs,
-      endMs,
-      blockedStartMs,
-      blockedEndMs,
-      capacity: s.capacity,
-      activeBookings: s.active_bookings_count,
-    };
-  });
+  const parsedSessions = existingSessions.map(s => ({
+    id: s.id,
+    eventTypeId: s.event_type_id,
+    startMs: new Date(s.start_at).getTime(),
+    endMs: new Date(s.end_at).getTime(),
+    blockedStartMs: new Date(s.blocked_start).getTime(),
+    blockedEndMs: new Date(s.blocked_end).getTime(),
+    capacity: s.capacity,
+    activeBookings: s.active_bookings_count,
+  }));
 
-  // Index date overrides by YYYY-MM-DD
   const overrideMap = new Map<string, DateOverride>();
   for (const o of dateOverrides) {
     const key = typeof o.date === 'string' ? o.date.slice(0, 10) : DateTime.fromJSDate(o.date).toISODate()!;
     overrideMap.set(key, o);
   }
 
-  // Index weekly availability by weekday (1..7)
   const weeklyMap = new Map<number, WeeklyWindow[]>();
   for (const w of weeklyAvailability) {
     const list = weeklyMap.get(w.weekday) || [];
@@ -149,7 +138,6 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
     weeklyMap.set(w.weekday, list);
   }
 
-  // Iterate date-by-date in host timezone
   let curHostDate = effectiveStart.setZone(hostTimezone).startOf('day');
   const endHostDate = effectiveEnd.setZone(hostTimezone).endOf('day');
 
@@ -157,7 +145,7 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
 
   while (curHostDate <= endHostDate) {
     const dateStr = curHostDate.toISODate()!;
-    const weekday = curHostDate.weekday; // 1 = Monday .. 7 = Sunday
+    const weekday = curHostDate.weekday;
 
     let dayWindows: { start_time: string; end_time: string }[] = [];
 
@@ -175,12 +163,10 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
       const winStartMin = parseTimeToMinutes(win.start_time);
       const winEndMin = parseTimeToMinutes(win.end_time);
 
-      // Step by event duration
       for (let minOffset = winStartMin; minOffset + eventType.duration_min <= winEndMin; minOffset += eventType.duration_min) {
         const slotHour = Math.floor(minOffset / 60);
         const slotMinute = minOffset % 60;
 
-        // Resolve local time in host timezone
         const localSlotStart = DateTime.fromObject(
           {
             year: curHostDate.year,
@@ -194,7 +180,7 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
           { zone: hostTimezone }
         );
 
-        // Check T4: Spring-forward gap check (nonexistent local times)
+        // Discard nonexistent local times during DST spring-forward transitions
         if (!localSlotStart.isValid || localSlotStart.hour !== slotHour || localSlotStart.minute !== slotMinute) {
           continue;
         }
@@ -205,16 +191,13 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
         const slotStartMs = slotStartUtc.toMillis();
         const slotEndMs = slotEndUtc.toMillis();
 
-        // Check bounds
         if (slotStartMs < effectiveStart.toMillis() || slotStartMs >= effectiveEnd.toMillis()) {
           continue;
         }
 
-        // Calculate candidate blocked range including buffers
         const candBlockedStartMs = slotStartMs - eventType.buffer_before_min * 60 * 1000;
         const candBlockedEndMs = slotEndMs + eventType.buffer_after_min * 60 * 1000;
 
-        // Check against existing sessions
         let seatsLeft = eventType.capacity;
         let isBlocked = false;
 
@@ -226,6 +209,7 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
               break;
             }
           } else {
+            // Half-open interval intersection: [candBlockedStart, candBlockedEnd) with [sessionBlockedStart, sessionBlockedEnd)
             const overlaps = candBlockedStartMs < session.blockedEndMs && candBlockedEndMs > session.blockedStartMs;
             if (overlaps) {
               isBlocked = true;
@@ -234,7 +218,6 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
           }
         }
 
-        // Check against external busy times (Optional Extension: External Busy Times)
         if (!isBlocked && externalBusyTimes.length > 0) {
           for (const busy of externalBusyTimes) {
             const bStart = new Date(busy.start_at).getTime();
@@ -250,7 +233,6 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
           continue;
         }
 
-        // Format for guest timezone
         const guestStartDt = slotStartUtc.setZone(guestTimezone);
         const guestEndDt = slotEndUtc.setZone(guestTimezone);
 
@@ -269,7 +251,5 @@ export function generateSlots(params: GenerateSlotsParams): AvailableSlot[] {
     curHostDate = curHostDate.plus({ days: 1 });
   }
 
-  // Sort chronologically
   return slots.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
 }
-

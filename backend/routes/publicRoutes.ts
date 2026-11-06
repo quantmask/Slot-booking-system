@@ -15,22 +15,19 @@ import { slotEventEmitter } from '../lib/eventBus.js';
 import { rateLimiter, botHoldProtector } from '../middleware/abuseProtection.js';
 
 export async function publicRoutes(app: FastifyInstance) {
-  // Optional Extension: Abuse Protection (Rate limiting on public booking endpoints)
   app.addHook('onRequest', async (req, reply) => {
     if (req.url.startsWith('/api/hosts') || req.url.startsWith('/api/holds')) {
       await rateLimiter(req, reply);
     }
   });
 
-  // Public booking endpoints
   app.get('/api/hosts/:host/events/:slug/slots', getSlots);
   app.post('/api/hosts/:host/events/:slug/slots/waitlist', joinWaitlist);
 
-  // Real-time Server-Sent Events (SSE) Stream for Instant Slot Sync
+  // Server-Sent Events (SSE) for real-time slot synchronization
   app.get('/api/hosts/:host/events/:slug/slots/stream', (req, reply) => {
     const { host } = req.params as { host: string; slug: string };
 
-    // Hijack the response to allow long-lived SSE streaming without Fastify closing the connection
     reply.hijack();
 
     reply.raw.setHeader('Content-Type', 'text/event-stream');
@@ -85,7 +82,6 @@ export async function publicRoutes(app: FastifyInstance) {
   app.post('/api/bookings/:token/reschedule', rescheduleBooking);
   app.post('/api/bookings/:token/cancel', cancelBooking);
 
-  // Health and Observability (Optional Extension)
   app.get('/health', async (_req, reply) => {
     try {
       const [dbCheck, notifStats, holdsStats, totalBookingsRes, confirmedBookingsRes, expiredHoldsRes, lagRes, waitlistRes] = await Promise.all([
@@ -128,7 +124,6 @@ export async function publicRoutes(app: FastifyInstance) {
     }
   });
 
-  // Mock Webhook Receiver & Inspection Log
   const mockWebhookLogs: any[] = [];
   app.post('/api/mock-webhook', async (req, reply) => {
     mockWebhookLogs.push({
@@ -143,4 +138,3 @@ export async function publicRoutes(app: FastifyInstance) {
     return reply.send(mockWebhookLogs);
   });
 }
-

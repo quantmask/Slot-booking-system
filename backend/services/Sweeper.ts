@@ -59,7 +59,7 @@ export class Sweeper {
         RETURNING id;
       `);
 
-      // Optional Extension: Dispatch due reminders (24h and 1h)
+      // Dispatch due reminders
       const dueRemindersRes = await client.query(`
         SELECT r.id, r.booking_id, r.reminder_type, b.guest_name, b.guest_email, s.start_at, et.name AS event_name
         FROM reminders r

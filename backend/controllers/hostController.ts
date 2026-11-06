@@ -247,11 +247,6 @@ export async function hostCancelBooking(req: FastifyRequest, reply: FastifyReply
   }
 }
 
-// ==========================================
-// OPTIONAL EXTENSION CONTROLLERS
-// ==========================================
-
-// 1. External Busy Times
 export async function getBusyTimes(req: FastifyRequest, reply: FastifyReply) {
   const host = (req as any).authHost;
   const res = await pool.query(`
@@ -338,7 +333,6 @@ export async function deleteBusyTime(req: FastifyRequest, reply: FastifyReply) {
   return reply.send({ status: 'ok' });
 }
 
-// 2. Host Webhooks with HMAC
 export async function getWebhooks(req: FastifyRequest, reply: FastifyReply) {
   const host = (req as any).authHost;
   const res = await pool.query(`
@@ -379,7 +373,6 @@ export async function getWebhookLogs(req: FastifyRequest, reply: FastifyReply) {
   return reply.send(res.rows);
 }
 
-// 3. Waitlist & Reminders Inspection
 export async function getHostWaitlists(req: FastifyRequest, reply: FastifyReply) {
   const host = (req as any).authHost;
   const res = await pool.query(`
