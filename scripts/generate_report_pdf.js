@@ -128,8 +128,8 @@ addSectionTitle(1, 'Links & Deployment');
 addBullet('Public Repository', 'https://github.com/example/slot-book (Full unsquashed commit history tracking phases 0 through 6).');
 addBullet('One-Command Run', 'docker compose up --build (starts PostgreSQL 15, applies SQL migrations, seeds demo host alex, builds Vite frontend, and starts Fastify API).');
 addBullet('Local Dev Run', 'npm install && npm run db:migrate && npm run db:seed && npm start');
-addBullet('Seeded Demo Host', 'Email: alex@example.com | Password: password123 | Timezone: America/New_York');
-addBullet('Event Types', 'quick-catchup (30m, 1-on-1, 15m buffer) and group-workshop (60m, capacity 3, 15m buffer).');
+addBullet('Seeded Demo Host', 'Host: Dr. Alexander Wright | Email: alex.wright@slotbook.io | Password: SlotBook@Secure2026! | Timezone: America/New_York');
+addBullet('Event Types', 'quick-catchup (Executive Strategy Consultation, 30m, 1-on-1, 15m buffer) and group-workshop (Architecture & Product Review, 60m, capacity 3, 15m buffer).');
 
 // 2. Architecture & Request Flow
 addSectionTitle(2, 'System Architecture & Request Flow');

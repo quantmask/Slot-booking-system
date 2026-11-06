@@ -27,10 +27,11 @@
 - **Repository**: Public GitHub Repository containing full, unsquashed commit history tracking each phase of development.
 - **Docker Compose**: Single-command startup (`docker compose up --build`) provisioning PostgreSQL 15, applying all schema migrations, seeding the demo environment, and launching the Fastify API and React web application.
 - **Demo Seed Credentials**:
-  - Host Email: `alex@example.com`
-  - Password: `password123`
+  - Host Email: `alex.wright@slotbook.io`
+  - Password: `SlotBook@Secure2026!`
+  - Host: Dr. Alexander Wright (`@alex`)
   - Timezone: `America/New_York`
-  - Event Types: `quick-catchup` (30m, 1-on-1, 15m buffer) and `group-workshop` (60m, capacity 3, 15m buffer)
+  - Event Types: `quick-catchup` (Executive Strategy Consultation, 30m, 1-on-1, 15m buffer) and `group-workshop` (Architecture & Product Review, 60m, capacity 3, 15m buffer)
 
 ---
 

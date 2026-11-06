@@ -1,8 +1,63 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, AlertCircle, CheckCircle, RefreshCw, XCircle, ArrowRight, ArrowLeft } from 'lucide-react';
+import { 
+  Calendar, Clock, AlertCircle, CheckCircle, RefreshCw, XCircle, 
+  ArrowRight, ArrowLeft, Download, CalendarPlus, ShieldCheck, User, Globe 
+} from 'lucide-react';
 
 interface ManageBookingProps {
   token: string;
+}
+
+// Helper to generate and download standard .ics calendar invite
+function downloadIcsFile(event: {
+  title: string;
+  startIso: string;
+  endIso: string;
+  description: string;
+  guestName: string;
+}) {
+  const formatDate = (iso: string) => new Date(iso).toISOString().replace(/-|:|\.\d\d\d/g, '');
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Slotbook Enterprise Scheduler//v1.0//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:REQUEST',
+    'BEGIN:VEVENT',
+    `UID:${Date.now()}@slotbook.io`,
+    `DTSTAMP:${formatDate(new Date().toISOString())}`,
+    `DTSTART:${formatDate(event.startIso)}`,
+    `DTEND:${formatDate(event.endIso)}`,
+    `SUMMARY:${event.title}`,
+    `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}`,
+    'LOCATION:Virtual Meeting / Google Meet Room',
+    'STATUS:CONFIRMED',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${event.title.replace(/\s+/g, '_')}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Helper to generate Google Calendar link
+function getGoogleCalendarUrl(event: {
+  title: string;
+  startIso: string;
+  endIso: string;
+  details: string;
+}) {
+  const format = (iso: string) => new Date(iso).toISOString().replace(/-|:|\.\d\d\d/g, '');
+  const dates = `${format(event.startIso)}/${format(event.endIso)}`;
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${dates}&details=${encodeURIComponent(event.details)}&location=${encodeURIComponent('Virtual Meeting')}`;
 }
 
 export default function ManageBooking({ token }: ManageBookingProps) {
@@ -21,6 +76,8 @@ export default function ManageBooking({ token }: ManageBookingProps) {
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const guestTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
   const fetchBooking = async () => {
     setLoading(true);
@@ -52,7 +109,6 @@ export default function ManageBooking({ token }: ManageBookingProps) {
     setError(null);
 
     try {
-      const guestTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       const res = await fetch(`/api/hosts/${booking.host_slug}/events/${booking.event_slug}/slots?tz=${encodeURIComponent(guestTz)}`);
       if (!res.ok) throw new Error('Failed to load slots for rescheduling');
       const data = await res.json();
@@ -108,7 +164,7 @@ export default function ManageBooking({ token }: ManageBookingProps) {
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || 'Cancellation failed');
+        throw new Error(err.message || 'Failed to cancel booking');
       }
 
       setCancelling(false);
@@ -122,224 +178,253 @@ export default function ManageBooking({ token }: ManageBookingProps) {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-slate-500">
-        <RefreshCw className="w-8 h-8 animate-spin mb-3 text-indigo-600" />
-        <p>Loading booking details...</p>
+      <div className="py-20 text-center text-slate-500 flex items-center justify-center gap-2">
+        <RefreshCw className="w-5 h-5 animate-spin text-indigo-600" />
+        <span>Loading reservation details...</span>
       </div>
     );
   }
 
   if (error && !booking) {
     return (
-      <div className="max-w-md mx-auto p-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-center">
-        <AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-600" />
-        <h3 className="font-semibold text-lg mb-1">Booking Not Found</h3>
-        <p className="text-sm mb-4">{error}</p>
+      <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-3xl p-8 text-center shadow-lg">
+        <XCircle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
+        <h2 className="text-xl font-bold text-slate-900">Reservation Not Found</h2>
+        <p className="text-xs text-slate-500 mt-2 mb-6">
+          This private management token may be invalid or has expired.
+        </p>
         <a
           href="/"
-          className="inline-block px-4 py-2 bg-slate-800 text-white text-xs font-medium rounded-lg hover:bg-slate-700 transition"
+          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition inline-block"
         >
-          Return Home
+          Return to Home
         </a>
       </div>
     );
   }
 
   const isCancelled = booking.status === 'cancelled';
-  const startDate = new Date(booking.start_at);
-  const endDate = new Date(booking.end_at);
+  const formattedStart = new Date(booking.start_at).toLocaleString([], {
+    dateStyle: 'full',
+    timeStyle: 'short',
+    timeZone: guestTz,
+  });
+
+  const googleCalUrl = getGoogleCalendarUrl({
+    title: booking.event_name,
+    startIso: booking.start_at,
+    endIso: booking.end_at,
+    details: `Scheduled with Dr. Alexander Wright via Slotbook Enterprise Scheduler.\nManage Token: ${token}`,
+  });
 
   return (
-    <div className="max-w-2xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="p-6 bg-slate-900 text-white flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <span className="text-xs uppercase tracking-wider font-semibold text-indigo-400">
-            Booking Management
-          </span>
-          <h1 className="text-2xl font-bold mt-0.5">{booking.event_name}</h1>
-          <p className="text-xs text-slate-400 mt-1">
-            with @{booking.host_slug} ({booking.duration_min} mins)
-          </p>
-        </div>
-
-        <div>
-          {isCancelled ? (
-            <span className="inline-flex items-center gap-1 px-3 py-1 bg-red-500/20 text-red-300 border border-red-500/40 rounded-full text-xs font-semibold">
-              <XCircle className="w-3.5 h-3.5" /> Cancelled
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full text-xs font-semibold">
-              <CheckCircle className="w-3.5 h-3.5" /> Confirmed
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="p-6">
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {rescheduleSuccess && (
-          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-700 text-xs flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 flex-shrink-0" />
-            <span>Booking successfully rescheduled!</span>
-          </div>
-        )}
-
-        {/* Reschedule View */}
-        {rescheduling ? (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-bold text-slate-900">Select a New Slot</h2>
-              <button
-                onClick={() => setRescheduling(false)}
-                className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Cancel Reschedule
-              </button>
+    <div className="max-w-3xl mx-auto space-y-6">
+      {/* Boarding Pass / Ticket Header Card */}
+      <div className="bg-white border border-slate-200/90 rounded-3xl shadow-sm overflow-hidden">
+        {/* Top colored strip */}
+        <div className={`p-6 sm:p-8 text-white ${
+          isCancelled
+            ? 'bg-slate-700'
+            : 'bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900'
+        }`}>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                isCancelled
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-400/30'
+                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
+              }`}>
+                {isCancelled ? 'Booking Cancelled' : 'Confirmed Reservation'}
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-extrabold mt-2 tracking-tight">
+                {booking.event_name}
+              </h1>
             </div>
 
-            {loadingSlots ? (
-              <div className="py-8 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
-                <span>Loading available slots...</span>
-              </div>
-            ) : availableSlots.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-500 bg-slate-50 rounded-xl">
-                No alternative slots available right now.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-xl p-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {availableSlots.map((slot) => {
-                    const isSelected = selectedNewSlot?.start_at === slot.start_at;
-                    return (
-                      <button
-                        key={slot.start_at}
-                        onClick={() => setSelectedNewSlot(slot)}
-                        className={`p-2.5 rounded-lg border text-left text-xs transition ${
-                          isSelected
-                            ? 'border-indigo-600 bg-indigo-50 font-semibold text-indigo-900'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="text-[11px] text-slate-500">{slot.guest_date}</div>
-                        <div>
-                          {slot.display_start} – {slot.display_end}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <button
-                  onClick={handleRescheduleSubmit}
-                  disabled={!selectedNewSlot || submitting}
-                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {submitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                  Confirm Move to New Slot
-                </button>
-              </div>
-            )}
+            <div className="text-right">
+              <div className="text-xs text-slate-400">Host</div>
+              <div className="text-sm font-bold text-white">Dr. Alexander Wright</div>
+              <div className="text-xs text-indigo-300 font-mono">@{booking.host_slug}</div>
+            </div>
           </div>
-        ) : cancelling ? (
-          /* Cancel View */
-          <form onSubmit={handleCancelSubmit} className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold text-red-700">Cancel This Booking</h2>
-              <button
-                type="button"
-                onClick={() => setCancelling(false)}
-                className="text-xs text-slate-500 hover:text-slate-800"
-              >
-                Back
-              </button>
+        </div>
+
+        {/* Meeting Details Body */}
+        <div className="p-6 sm:p-8 space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 border border-slate-200/80 rounded-2xl p-5 text-xs">
+            <div>
+              <span className="text-slate-400 font-medium block mb-1 uppercase tracking-wider text-[10px]">Guest Information</span>
+              <div className="font-bold text-slate-900 text-sm">{booking.guest_name}</div>
+              <div className="text-slate-500 font-mono mt-0.5">{booking.guest_email}</div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Reason for Cancellation (Required)
-              </label>
-              <textarea
-                required
-                rows={3}
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="Please state why you are cancelling..."
-                className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-red-500 focus:outline-none"
-              />
+              <span className="text-slate-400 font-medium block mb-1 uppercase tracking-wider text-[10px]">Scheduled Time ({guestTz})</span>
+              <div className="font-bold text-indigo-700 text-sm">{formattedStart}</div>
+              <div className="text-slate-500 mt-0.5">{booking.duration_min} minutes session</div>
             </div>
+          </div>
 
-            <button
-              type="submit"
-              disabled={submitting || !cancelReason.trim()}
-              className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {submitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-              Confirm Cancellation
-            </button>
-          </form>
-        ) : (
-          /* Standard Booking Details View */
-          <div className="space-y-6">
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 text-sm">
-              <div className="flex justify-between items-center py-1 border-b border-slate-200">
-                <span className="text-slate-500 text-xs">Guest</span>
-                <span className="font-semibold text-slate-900">
-                  {booking.guest_name} ({booking.guest_email})
-                </span>
-              </div>
-
-              <div className="flex justify-between items-center py-1 border-b border-slate-200">
-                <span className="text-slate-500 text-xs">Date & Time</span>
-                <span className="font-semibold text-slate-900 text-right">
-                  {startDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })},{' '}
-                  {startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} –{' '}
-                  {endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-
-              <div className="flex justify-between items-center py-1 border-b border-slate-200">
-                <span className="text-slate-500 text-xs">Host Timezone</span>
-                <span className="font-mono text-xs text-slate-700">{booking.host_timezone}</span>
-              </div>
-
-              {isCancelled && booking.cancel_reason && (
-                <div className="py-2 bg-red-50/50 p-2.5 rounded border border-red-200 text-xs text-red-800">
-                  <span className="font-semibold">Cancellation Reason:</span> {booking.cancel_reason}
-                </div>
-              )}
+          {isCancelled && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800">
+              <span className="font-bold">Cancellation Reason:</span> {booking.cancel_reason || 'No reason provided'}
             </div>
+          )}
 
-            {/* Action Buttons */}
-            {!isCancelled && (
-              <div className="flex gap-3">
+          {rescheduleSuccess && (
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-800 flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-600" />
+              <span>Meeting was rescheduled successfully!</span>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          {!isCancelled && !rescheduling && !cancelling && (
+            <div className="space-y-4">
+              {/* Calendar Exports */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={() => downloadIcsFile({
+                    title: booking.event_name,
+                    startIso: booking.start_at,
+                    endIso: booking.end_at,
+                    description: `Meeting with Dr. Alexander Wright via Slotbook.`,
+                    guestName: booking.guest_name,
+                  })}
+                  className="flex items-center justify-center gap-2 py-2.5 px-4 bg-white border border-slate-300 hover:border-slate-400 text-slate-700 rounded-xl text-xs font-semibold shadow-2xs hover:bg-slate-50 transition"
+                >
+                  <Download className="w-4 h-4 text-slate-600" />
+                  <span>Download .ics Calendar</span>
+                </button>
+
+                <a
+                  href={googleCalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100/70 text-indigo-700 rounded-xl text-xs font-semibold transition"
+                >
+                  <CalendarPlus className="w-4 h-4 text-indigo-600" />
+                  <span>Add to Google Calendar</span>
+                </a>
+              </div>
+
+              {/* Management Actions */}
+              <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   onClick={startReschedule}
-                  className="flex-1 py-2.5 border border-slate-300 hover:bg-slate-50 rounded-lg text-xs font-semibold text-slate-700 transition flex items-center justify-center gap-1.5"
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition"
                 >
-                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                  Reschedule Slot
+                  Reschedule Meeting
                 </button>
                 <button
                   onClick={() => setCancelling(true)}
-                  className="py-2.5 px-4 border border-red-200 text-red-600 hover:bg-red-50 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                  className="px-5 py-2.5 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-semibold transition"
                 >
-                  <XCircle className="w-3.5 h-3.5" />
-                  Cancel
+                  Cancel Meeting
                 </button>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+
+          {/* RESCHEDULE MODAL */}
+          {rescheduling && (
+            <div className="border border-indigo-200 bg-indigo-50/40 rounded-2xl p-5 space-y-4 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-sm text-slate-900">Choose a New Time Slot</h3>
+                <button
+                  onClick={() => setRescheduling(false)}
+                  className="text-xs text-slate-500 hover:text-slate-800 font-semibold"
+                >
+                  Close
+                </button>
+              </div>
+
+              {loadingSlots ? (
+                <div className="py-8 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" /> Loading fresh slots...
+                </div>
+              ) : availableSlots.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">No alternative slots available right now.</div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-60 overflow-y-auto p-1">
+                  {availableSlots.slice(0, 20).map((s) => (
+                    <button
+                      key={s.start_at}
+                      onClick={() => setSelectedNewSlot(s)}
+                      className={`p-2.5 rounded-xl border text-center text-xs transition font-semibold ${
+                        selectedNewSlot?.start_at === s.start_at
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-800 hover:border-indigo-400'
+                      }`}
+                    >
+                      <div>{s.display_start}</div>
+                      <div className="text-[10px] opacity-75 font-normal">{s.guest_date}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {selectedNewSlot && (
+                <div className="pt-3 border-t border-indigo-200/60 flex items-center justify-between">
+                  <div className="text-xs text-indigo-900 font-medium">
+                    New Slot: <span className="font-bold">{selectedNewSlot.display_start} ({selectedNewSlot.guest_date})</span>
+                  </div>
+                  <button
+                    onClick={handleRescheduleSubmit}
+                    disabled={submitting}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                  >
+                    {submitting ? 'Rescheduling...' : 'Confirm New Slot'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CANCELLATION MODAL */}
+          {cancelling && (
+            <form onSubmit={handleCancelSubmit} className="border border-rose-200 bg-rose-50/40 rounded-2xl p-5 space-y-4 animate-in fade-in">
+              <div>
+                <h3 className="font-bold text-sm text-rose-900">Cancel Your Meeting</h3>
+                <p className="text-xs text-rose-700 mt-0.5">
+                  Are you sure you want to cancel this booking? The slot will be immediately freed for other guests.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Reason for Cancellation
+                </label>
+                <textarea
+                  required
+                  rows={2}
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="e.g. Schedule conflict, project postponed..."
+                  className="w-full p-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={submitting || !cancelReason.trim()}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                >
+                  {submitting ? 'Cancelling...' : 'Confirm Cancellation'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCancelling(false)}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-white rounded-xl text-xs font-semibold transition"
+                >
+                  Never mind
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
 }
-

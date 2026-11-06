@@ -1,4 +1,5 @@
 import { pool } from '../config/db.js';
+import { notifySlotsChanged } from '../lib/eventBus.js';
 
 export class Sweeper {
   private isRunning = false;
@@ -59,6 +60,9 @@ export class Sweeper {
       `);
 
       await client.query('COMMIT');
+      if ((updateRes.rowCount || 0) > 0) {
+        notifySlotsChanged();
+      }
       return {
         expiredBookings: updateRes.rowCount || 0,
         releasedSessions: sessRes.rowCount || 0,

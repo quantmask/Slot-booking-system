@@ -6,7 +6,7 @@ export async function seedDatabase() {
 
   await withTransaction(async (client) => {
     // Upsert Host 'alex'
-    const passwordHash = hashPassword('password123');
+    const passwordHash = hashPassword('SlotBook@Secure2026!');
     const hostRes = await client.query(`
       INSERT INTO hosts (slug, email, password_hash, timezone)
       VALUES ($1, $2, $3, $4)
@@ -15,7 +15,7 @@ export async function seedDatabase() {
           password_hash = EXCLUDED.password_hash,
           timezone = EXCLUDED.timezone
       RETURNING id;
-    `, ['alex', 'alex@example.com', passwordHash, 'America/New_York']);
+    `, ['alex', 'alex.wright@slotbook.io', passwordHash, 'America/New_York']);
 
     const hostId = hostRes.rows[0].id;
     console.log(`[Seeder] Seeded demo host 'alex' (${hostId})`);
@@ -38,7 +38,7 @@ export async function seedDatabase() {
           horizon_days = EXCLUDED.horizon_days,
           archived_at = NULL
       RETURNING id;
-    `, [hostId, 'quick-catchup', 'Quick Catchup', 30, 1, 0, 15, 4, 30]);
+    `, [hostId, 'quick-catchup', 'Executive Strategy Consultation', 30, 1, 0, 15, 4, 30]);
 
     // 2. Group session (60 min, capacity 3, buffer 15 min before/after, min notice 24h, horizon 30d)
     await client.query(`
@@ -57,7 +57,7 @@ export async function seedDatabase() {
           horizon_days = EXCLUDED.horizon_days,
           archived_at = NULL
       RETURNING id;
-    `, [hostId, 'group-workshop', 'Group Workshop', 60, 3, 15, 15, 24, 30]);
+    `, [hostId, 'group-workshop', 'Architecture & Product Review', 60, 3, 15, 15, 24, 30]);
 
     console.log('[Seeder] Seeded event types: quick-catchup, group-workshop');
 

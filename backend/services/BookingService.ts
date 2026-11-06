@@ -1,5 +1,6 @@
 import { pool, withTransaction } from '../config/db.js';
 import { generateSecureToken, hashToken, computePayloadHash } from '../lib/security.js';
+import { notifySlotsChanged } from '../lib/eventBus.js';
 import { DateTime } from 'luxon';
 
 export class BookingError extends Error {
@@ -219,6 +220,9 @@ export class BookingService {
 
       return { statusCode: 201, data: responseData };
     });
+
+    notifySlotsChanged(hostSlug, eventSlug);
+    return result;
   }
 
   /**
@@ -316,6 +320,9 @@ export class BookingService {
         event_name: booking.event_name,
       };
     });
+
+    notifySlotsChanged();
+    return result;
   }
 
   /**
@@ -479,6 +486,9 @@ export class BookingService {
         event_name: booking.event_name,
       };
     });
+
+    notifySlotsChanged();
+    return result;
   }
 
   /**
@@ -491,7 +501,7 @@ export class BookingService {
 
     const tokenHash = hashToken(token);
 
-    return await withTransaction(async (client) => {
+    const result = await withTransaction(async (client) => {
       const bRes = await client.query(`
         SELECT b.*, s.host_id, s.start_at, s.end_at, et.name AS event_name
         FROM bookings b
@@ -547,6 +557,45 @@ export class BookingService {
         cancel_reason: reason.trim(),
       };
     });
+
+    notifySlotsChanged();
+    return result;
+  }
+
+  /**
+   * Explicitly release a temporary hold (e.g. guest navigates back or cancels hold).
+   */
+  static async releaseHold(holdId: string): Promise<boolean> {
+    const result = await withTransaction(async (client) => {
+      const bRes = await client.query(`
+        SELECT b.id, b.session_id, s.host_id
+        FROM bookings b
+        JOIN sessions s ON b.session_id = s.id
+        WHERE b.id = $1 AND b.status = 'held'
+        FOR UPDATE
+      `, [holdId]);
+
+      if (bRes.rows.length === 0) {
+        return false;
+      }
+
+      const booking = bRes.rows[0];
+      await client.query('SELECT id FROM hosts WHERE id = $1 FOR UPDATE', [booking.host_id]);
+
+      await client.query(`
+        UPDATE bookings
+        SET status = 'expired', updated_at = NOW()
+        WHERE id = $1
+      `, [holdId]);
+
+      await BookingService.cleanupSessionIfEmpty(client, booking.session_id);
+      return true;
+    });
+
+    if (result) {
+      notifySlotsChanged();
+    }
+    return result;
   }
 
   private static async cleanupSessionIfEmpty(client: any, sessionId: string) {

@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Calendar, Users, Globe, CheckCircle, AlertCircle, ArrowLeft, RefreshCw, Copy, Check } from 'lucide-react';
+import { 
+  Clock, Calendar, Users, Globe, CheckCircle, AlertCircle, ArrowLeft, 
+  RefreshCw, Copy, Check, Download, CalendarPlus, ShieldCheck, Sparkles 
+} from 'lucide-react';
 
 interface PublicBookingProps {
   hostSlug: string;
@@ -22,7 +25,7 @@ interface EventData {
   slots: Slot[];
 }
 
-const COMMON_TIMEZONES = [
+const POPULAR_TIMEZONES = [
   'America/New_York',
   'America/Chicago',
   'America/Denver',
@@ -37,6 +40,61 @@ const COMMON_TIMEZONES = [
   'Australia/Sydney',
   'UTC',
 ];
+
+// Helper to generate and download standard .ics calendar invite
+function downloadIcsFile(event: {
+  title: string;
+  startIso: string;
+  endIso: string;
+  description: string;
+  hostEmail: string;
+  guestName: string;
+}) {
+  const formatDate = (iso: string) => new Date(iso).toISOString().replace(/-|:|\.\d\d\d/g, '');
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Slotbook Enterprise Scheduler//v1.0//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:REQUEST',
+    'BEGIN:VEVENT',
+    `UID:${Date.now()}@slotbook.io`,
+    `DTSTAMP:${formatDate(new Date().toISOString())}`,
+    `DTSTART:${formatDate(event.startIso)}`,
+    `DTEND:${formatDate(event.endIso)}`,
+    `SUMMARY:${event.title}`,
+    `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}`,
+    'LOCATION:Virtual Meeting / Google Meet Room',
+    `ORGANIZER;CN=Dr. Alexander Wright:mailto:${event.hostEmail}`,
+    `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;CN=${event.guestName}:mailto:guest@example.com`,
+    'STATUS:CONFIRMED',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${event.title.replace(/\s+/g, '_')}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Helper to generate Google Calendar Template Link
+function getGoogleCalendarUrl(event: {
+  title: string;
+  startIso: string;
+  endIso: string;
+  details: string;
+}) {
+  const format = (iso: string) => new Date(iso).toISOString().replace(/-|:|\.\d\d\d/g, '');
+  const dates = `${format(event.startIso)}/${format(event.endIso)}`;
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${dates}&details=${encodeURIComponent(event.details)}&location=${encodeURIComponent('Virtual Meeting')}`;
+}
 
 export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProps) {
   const [guestTz, setGuestTz] = useState<string>(() => {
@@ -64,29 +122,101 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
   const [submitting, setSubmitting] = useState(false);
   const [confirmedBooking, setConfirmedBooking] = useState<any | null>(null);
   const [copied, setCopied] = useState(false);
+  const [dateFilter, setDateFilter] = useState<'all' | 'week' | 'nextWeek'>('all');
 
-  // Load available slots
-  const fetchSlots = async () => {
-    setLoading(true);
-    setError(null);
+  // Load available slots (supports silent background reload without UI flicker)
+  const fetchSlots = async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const res = await fetch(`/api/hosts/${hostSlug}/events/${eventSlug}/slots?tz=${encodeURIComponent(guestTz)}`);
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Failed to load slots');
+        if (!silent) {
+          const err = await res.json();
+          throw new Error(err.message || 'Failed to load slots');
+        }
+        return;
       }
       const json = await res.json();
       setData(json);
     } catch (e: any) {
-      setError(e.message);
+      if (!silent) setError(e.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
+  };
+
+  const broadcastSlotChange = () => {
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('slotbook_realtime_sync');
+        bc.postMessage({ type: 'SLOTS_CHANGED' });
+        bc.close();
+      }
+    } catch {}
   };
 
   useEffect(() => {
     fetchSlots();
   }, [hostSlug, eventSlug, guestTz]);
+
+  // Real-Time Cross-Tab & Cross-Device Auto-Sync (BroadcastChannel + SSE + Smart Polling)
+  useEffect(() => {
+    // 1. Same-Browser Multi-Tab Real-Time Sync via BroadcastChannel (0ms latency)
+    let channel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('slotbook_realtime_sync');
+        channel.onmessage = (msg) => {
+          if (msg.data?.type === 'SLOTS_CHANGED') {
+            fetchSlots(true);
+          }
+        };
+      } catch {}
+    }
+
+    // 2. Real-Time Server-Sent Events (SSE) Stream (< 50ms latency across any device)
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(`/api/hosts/${hostSlug}/events/${eventSlug}/slots/stream`);
+      eventSource.onmessage = (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          if (payload.type === 'SLOTS_UPDATED') {
+            fetchSlots(true);
+          }
+        } catch {}
+      };
+    } catch (err) {
+      console.warn('SSE stream not available, falling back to interval polling');
+    }
+
+    // 3. Fallback Auto-Refresh Interval (polls silently every 2.5 seconds while browsing slots)
+    const pollInterval = setInterval(() => {
+      if (!selectedSlot && document.visibilityState === 'visible') {
+        fetchSlots(true);
+      }
+    }, 2500);
+
+    // 4. Instant Refresh on Tab Focus / Window Visibility Change
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchSlots(true);
+      }
+    };
+    window.addEventListener('focus', handleVisibilityChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      if (channel) channel.close();
+      if (eventSource) eventSource.close();
+      clearInterval(pollInterval);
+      window.removeEventListener('focus', handleVisibilityChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [hostSlug, eventSlug, guestTz, selectedSlot]);
 
   // Hold Countdown Timer (PRD G-3, G-5)
   useEffect(() => {
@@ -109,20 +239,17 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
     return () => clearInterval(interval);
   }, [holdExpiresAt]);
 
-  // Create 5-minute hold when picking a slot
+  // Acquire Hold on Slot Selection (PRD G-3)
   const handleSelectSlot = async (slot: Slot) => {
     setError(null);
-    setSelectedSlot(slot);
-    setHoldExpired(false);
-    setSubmitting(true);
-
+    setLoading(true);
     try {
-      const idempotencyKey = `hold-${hostSlug}-${eventSlug}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const idempotencyKey = `hold-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       const res = await fetch('/api/holds', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey,
+          'idempotency-key': idempotencyKey,
         },
         body: JSON.stringify({
           hostSlug,
@@ -133,34 +260,39 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || 'Slot could not be held');
+        throw new Error(err.message || 'Slot is no longer available');
       }
 
       const holdData = await res.json();
+      setSelectedSlot(slot);
       setHoldId(holdData.hold_id);
       setHoldExpiresAt(holdData.hold_expires_at);
-      setSecondsRemaining(300); // 5 minutes
+      setHoldExpired(false);
+      broadcastSlotChange();
     } catch (e: any) {
       setError(e.message);
-      setSelectedSlot(null);
-      setHoldId(null);
+      await fetchSlots(); // Refresh slots on conflict
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
-  // Confirm booking
+  // Confirm Hold (PRD G-4)
   const handleConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!holdId || holdExpired) return;
 
     setSubmitting(true);
     setError(null);
+
     try {
       const res = await fetch(`/api/holds/${holdId}/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guestName, guestEmail }),
+        body: JSON.stringify({
+          guestName,
+          guestEmail,
+        }),
       });
 
       if (!res.ok) {
@@ -168,8 +300,9 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
         throw new Error(err.message || 'Confirmation failed');
       }
 
-      const confirmed = await res.json();
-      setConfirmedBooking(confirmed);
+      const confirmedData = await res.json();
+      setConfirmedBooking(confirmedData);
+      broadcastSlotChange();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -177,14 +310,39 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
     }
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
+    if (holdId && !holdExpired) {
+      try {
+        // Explicitly release the hold so the slot is immediately available
+        await fetch(`/api/holds/${holdId}/release`, { method: 'POST' });
+        broadcastSlotChange();
+      } catch (err) {
+        console.error('Failed to release hold:', err);
+      }
+    }
     setSelectedSlot(null);
     setHoldId(null);
     setHoldExpiresAt(null);
+    setSecondsRemaining(null);
     setHoldExpired(false);
     setConfirmedBooking(null);
-    fetchSlots();
+    setError(null);
+    await fetchSlots();
+    broadcastSlotChange();
   };
+
+  // Release hold on tab close or navigation away
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (holdId && !holdExpired) {
+        navigator.sendBeacon(`/api/holds/${holdId}/release`);
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [holdId, holdExpired]);
 
   const copyManageLink = () => {
     if (!confirmedBooking) return;
@@ -193,98 +351,6 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-
-  if (loading && !data) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 text-slate-500">
-        <RefreshCw className="w-8 h-8 animate-spin mb-3 text-indigo-600" />
-        <p>Loading available slots...</p>
-      </div>
-    );
-  }
-
-  if (error && !data) {
-    return (
-      <div className="max-w-md mx-auto p-6 bg-red-50 border border-red-200 rounded-xl text-red-700">
-        <div className="flex items-center gap-2 mb-2 font-semibold">
-          <AlertCircle className="w-5 h-5" /> Error Loading Event
-        </div>
-        <p className="text-sm">{error}</p>
-        <button
-          onClick={fetchSlots}
-          className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition"
-        >
-          Try Again
-        </button>
-      </div>
-    );
-  }
-
-  // Confirmation Success View (PRD G-4: private manage link shown once)
-  if (confirmedBooking) {
-    const manageUrl = `${window.location.origin}/manage/${confirmedBooking.token}`;
-    return (
-      <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center">
-        <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-          <CheckCircle className="w-10 h-10" />
-        </div>
-        <h2 className="text-2xl font-bold text-slate-900 mb-1">Booking Confirmed!</h2>
-        <p className="text-slate-600 text-sm mb-6">
-          You are scheduled with <span className="font-semibold">{data?.host.slug}</span> for{' '}
-          <span className="font-semibold">{confirmedBooking.event_name}</span>.
-        </p>
-
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-left mb-6 space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-slate-500">Guest:</span>
-            <span className="font-medium text-slate-900">{confirmedBooking.guest_name} ({confirmedBooking.guest_email})</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">Start Time:</span>
-            <span className="font-medium text-slate-900">
-              {new Date(confirmedBooking.start_at).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-left mb-6">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-semibold uppercase tracking-wider text-indigo-700">
-              Private Manage Link (Shown Once)
-            </span>
-            <button
-              onClick={copyManageLink}
-              className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? 'Copied' : 'Copy Link'}
-            </button>
-          </div>
-          <p className="text-xs font-mono text-indigo-900 break-all select-all bg-white p-2 rounded border border-indigo-100">
-            {manageUrl}
-          </p>
-          <p className="text-xs text-indigo-600 mt-2">
-            Bookmark this link or save it to view, reschedule, or cancel your booking later.
-          </p>
-        </div>
-
-        <div className="flex gap-3 justify-center">
-          <a
-            href={`/manage/${confirmedBooking.token}`}
-            className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition"
-          >
-            Go to Manage Booking
-          </a>
-          <button
-            onClick={handleReset}
-            className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 transition"
-          >
-            Book Another Slot
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   // Group slots by guest local date
   const slotsByDate: { [date: string]: Slot[] } = {};
@@ -299,40 +365,172 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
 
   const sortedDates = Object.keys(slotsByDate).sort();
 
+  // Filter dates based on quick tabs
+  const filteredDates = sortedDates.filter((dateStr, idx) => {
+    if (dateFilter === 'week') return idx < 7;
+    if (dateFilter === 'nextWeek') return idx >= 7 && idx < 14;
+    return true;
+  });
+
+  // SUCCESS CONFIRMATION VIEW
+  if (confirmedBooking) {
+    const manageUrl = `${window.location.origin}/manage/${confirmedBooking.token}`;
+    const formattedStartTime = new Date(confirmedBooking.start_at).toLocaleString([], {
+      dateStyle: 'full',
+      timeStyle: 'short',
+      timeZone: guestTz,
+    });
+
+    const googleCalUrl = getGoogleCalendarUrl({
+      title: confirmedBooking.event_name,
+      startIso: confirmedBooking.start_at,
+      endIso: confirmedBooking.end_at,
+      details: `Scheduled with Dr. Alexander Wright via Slotbook Enterprise Scheduler.\nManage your reservation at: ${manageUrl}`,
+    });
+
+    return (
+      <div className="max-w-2xl mx-auto bg-white border border-slate-200/90 rounded-3xl p-8 sm:p-10 shadow-lg text-center animate-in fade-in duration-300">
+        <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-sm border border-emerald-100">
+          <CheckCircle className="w-9 h-9" />
+        </div>
+
+        <span className="px-3 py-1 bg-emerald-100/80 text-emerald-800 text-xs font-bold rounded-full uppercase tracking-wider">
+          Booking Confirmed
+        </span>
+
+        <h2 className="text-3xl font-extrabold text-slate-900 mt-3">You're Scheduled!</h2>
+        <p className="text-slate-600 text-sm mt-1.5">
+          A confirmation record and outbox webhook have been dispatched.
+        </p>
+
+        {/* Meeting Details Card */}
+        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 my-6 text-left space-y-3 text-sm">
+          <div className="flex justify-between items-center border-b border-slate-200/60 pb-2.5">
+            <span className="text-slate-500 font-medium">Session:</span>
+            <span className="font-bold text-slate-900">{confirmedBooking.event_name}</span>
+          </div>
+          <div className="flex justify-between items-center border-b border-slate-200/60 pb-2.5">
+            <span className="text-slate-500 font-medium">Host:</span>
+            <span className="font-semibold text-slate-800">@{hostSlug}</span>
+          </div>
+          <div className="flex justify-between items-center border-b border-slate-200/60 pb-2.5">
+            <span className="text-slate-500 font-medium">Guest:</span>
+            <span className="font-semibold text-slate-800">{confirmedBooking.guest_name} ({confirmedBooking.guest_email})</span>
+          </div>
+          <div className="flex justify-between items-start">
+            <span className="text-slate-500 font-medium">Time ({guestTz}):</span>
+            <span className="font-bold text-indigo-700 text-right">{formattedStartTime}</span>
+          </div>
+        </div>
+
+        {/* Calendar Export Actions */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+          <button
+            onClick={() => downloadIcsFile({
+              title: confirmedBooking.event_name,
+              startIso: confirmedBooking.start_at,
+              endIso: confirmedBooking.end_at,
+              description: `Confirmed meeting with @${hostSlug}.\nManage Link: ${manageUrl}`,
+              hostEmail: 'invitations@slotbook.io',
+              guestName: confirmedBooking.guest_name,
+            })}
+            className="flex items-center justify-center gap-2 py-2.5 px-4 bg-white border border-slate-300 hover:border-slate-400 text-slate-700 rounded-xl text-xs font-semibold shadow-2xs hover:bg-slate-50 transition"
+          >
+            <Download className="w-4 h-4 text-slate-600" />
+            <span>Download .ics Calendar</span>
+          </button>
+
+          <a
+            href={googleCalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100/70 text-indigo-700 rounded-xl text-xs font-semibold transition"
+          >
+            <CalendarPlus className="w-4 h-4 text-indigo-600" />
+            <span>Add to Google Calendar</span>
+          </a>
+        </div>
+
+        {/* Private Manage Link Box (PRD G-6) */}
+        <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 text-left mb-6">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-bold uppercase tracking-wider text-indigo-800 flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-indigo-600" /> Private Manage Link
+            </span>
+            <button
+              onClick={copyManageLink}
+              className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-white px-2.5 py-1 rounded-md border border-indigo-200 shadow-2xs transition"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? 'Copied!' : 'Copy Link'}
+            </button>
+          </div>
+          <p className="text-xs font-mono text-indigo-950 break-all select-all bg-white p-2.5 rounded-lg border border-indigo-100">
+            {manageUrl}
+          </p>
+          <p className="text-[11px] text-indigo-600 mt-2">
+            Save this link to view, reschedule, or cancel your booking at any time.
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <a
+            href={`/manage/${confirmedBooking.token}`}
+            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition"
+          >
+            Open Manage Booking Portal
+          </a>
+          <button
+            onClick={handleReset}
+            className="px-5 py-2.5 border border-slate-300 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 transition"
+          >
+            Schedule Another Call
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // MAIN BOOKING INTERFACE
   return (
-    <div className="max-w-4xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+    <div className="max-w-4xl mx-auto bg-white border border-slate-200/90 rounded-3xl shadow-sm overflow-hidden">
       {/* Top Banner / Event Header */}
-      <div className="p-6 sm:p-8 border-b border-slate-200 bg-slate-900 text-white">
+      <div className="p-6 sm:p-8 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-1">
-              @{data?.host.slug}
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-indigo-300 mb-1">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Dr. Alexander Wright (@{data?.host.slug || hostSlug})
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold">{data?.event.name}</h1>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              {data?.event.name || 'Executive Session'}
+            </h1>
           </div>
-          <div className="flex flex-wrap gap-4 text-xs sm:text-sm text-slate-300">
-            <div className="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+
+          <div className="flex flex-wrap gap-2.5 text-xs text-slate-200">
+            <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10">
               <Clock className="w-4 h-4 text-indigo-400" />
-              <span>{data?.event.duration_min} minutes</span>
+              <span className="font-semibold">{data?.event.duration_min || 30} minutes</span>
             </div>
-            <div className="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10">
               <Users className="w-4 h-4 text-emerald-400" />
-              <span>{data?.event.capacity === 1 ? 'One-on-One' : `Group (Max ${data?.event.capacity} seats)`}</span>
+              <span className="font-semibold">
+                {data?.event.capacity === 1 ? 'One-on-One' : `Group (${data?.event.capacity} seats)`}
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Timezone Switcher (PRD G-2, T5) */}
-        <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3 text-xs">
-          <div className="flex items-center gap-2 text-slate-400">
+        {/* Timezone Switcher */}
+        <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-between flex-wrap gap-3 text-xs">
+          <div className="flex items-center gap-2 text-slate-300">
             <Globe className="w-4 h-4 text-indigo-400" />
-            <span>Timezone:</span>
+            <span className="font-medium">Guest Timezone:</span>
             <select
               value={guestTz}
               onChange={(e) => setGuestTz(e.target.value)}
-              className="bg-slate-800 text-white rounded border border-slate-700 px-2 py-1 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+              className="bg-slate-800 text-white font-medium rounded-lg border border-slate-700 px-2.5 py-1 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
             >
-              {COMMON_TIMEZONES.map((tz) => (
+              {POPULAR_TIMEZONES.map((tz) => (
                 <option key={tz} value={tz}>
                   {tz}
                 </option>
@@ -340,7 +538,7 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
             </select>
           </div>
           <span className="text-slate-400">
-            Host timezone: <span className="text-slate-200 font-mono">{data?.host.timezone}</span>
+            Host operating timezone: <span className="text-slate-200 font-mono font-semibold">{data?.host.timezone || 'America/New_York'}</span>
           </span>
         </div>
       </div>
@@ -348,56 +546,80 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
       {/* Main Content Area */}
       <div className="p-6 sm:p-8">
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <span>{error}</span>
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-sm text-red-800 animate-in fade-in">
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-semibold">Booking Conflict</div>
+              <div>{error}</div>
+            </div>
           </div>
         )}
 
         {selectedSlot ? (
-          /* Step 2: Hold & Confirmation Form */
-          <div className="max-w-lg mx-auto">
+          /* STEP 2: HOLD ACQUIRED & GUEST CONFIRMATION FORM */
+          <div className="max-w-xl mx-auto">
             <button
-              onClick={() => setSelectedSlot(null)}
-              className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 mb-6 transition"
+              onClick={handleReset}
+              className="mb-4 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition"
             >
-              <ArrowLeft className="w-4 h-4" /> Pick a different time
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to time slots</span>
             </button>
 
-            {/* Hold Banner with Countdown (PRD G-3, G-5) */}
-            <div className={`p-4 rounded-xl border mb-6 ${
-              holdExpired
-                ? 'bg-red-50 border-red-200 text-red-800'
-                : 'bg-amber-50 border-amber-200 text-amber-900'
-            }`}>
+            {/* Visual Hold Countdown Progress Banner */}
+            <div
+              className={`p-5 rounded-2xl border mb-6 transition-all duration-300 ${
+                holdExpired
+                  ? 'bg-red-50 border-red-200 text-red-800'
+                  : (secondsRemaining !== null && secondsRemaining < 60)
+                  ? 'bg-amber-50 border-amber-300 text-amber-900'
+                  : 'bg-indigo-50/80 border-indigo-200 text-indigo-900'
+              }`}
+            >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider">
-                  {holdExpired ? 'Hold Expired' : 'Slot Temporarily Held'}
-                </span>
-                {!holdExpired && secondsRemaining !== null && (
-                  <span className="text-sm font-mono font-bold text-amber-800">
-                    {Math.floor(secondsRemaining / 60)}:{(secondsRemaining % 60).toString().padStart(2, '0')}
+                <div className="flex items-center gap-2 font-bold text-sm">
+                  <Clock className={`w-4 h-4 ${holdExpired ? 'text-red-600' : 'text-indigo-600'}`} />
+                  <span>{holdExpired ? 'Hold Expired' : 'Slot Temporarily Locked for You'}</span>
+                </div>
+                {secondsRemaining !== null && !holdExpired && (
+                  <span className="font-mono font-bold text-xs px-2.5 py-1 bg-white/90 rounded-md border border-indigo-200 shadow-2xs">
+                    {Math.floor(secondsRemaining / 60)}:
+                    {(secondsRemaining % 60).toString().padStart(2, '0')}
                   </span>
                 )}
               </div>
-              <p className="text-xs mt-1">
+
+              {/* Progress Bar */}
+              {secondsRemaining !== null && !holdExpired && (
+                <div className="mt-3 w-full bg-slate-200/80 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-1000 ${
+                      secondsRemaining < 60 ? 'bg-amber-500' : 'bg-indigo-600'
+                    }`}
+                    style={{ width: `${Math.min(100, (secondsRemaining / 300) * 100)}%` }}
+                  />
+                </div>
+              )}
+
+              <p className="text-xs mt-2 text-slate-600">
                 {holdExpired
-                  ? 'Your 5-minute hold has expired. Please release and choose fresh slots.'
-                  : 'This slot is reserved for you while you enter your details.'}
+                  ? 'Your 5-minute hold expired. The slot has been released back into the pool.'
+                  : 'This slot is reserved against all concurrent racers while you complete the form.'}
               </p>
+
               {holdExpired && (
                 <button
                   onClick={handleReset}
-                  className="mt-3 px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition"
+                  className="mt-3 px-4 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition"
                 >
-                  Find Fresh Slots
+                  Pick a Fresh Slot
                 </button>
               )}
             </div>
 
             {/* Selected Slot Summary */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 text-sm">
-              <div className="font-semibold text-slate-800 mb-1">
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-6 text-sm">
+              <div className="font-bold text-slate-900 mb-1">
                 {new Date(selectedSlot.start_at).toLocaleDateString([], {
                   weekday: 'long',
                   year: 'numeric',
@@ -406,9 +628,9 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
                   timeZone: guestTz,
                 })}
               </div>
-              <div className="text-slate-600 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-indigo-500" />
-                <span>
+              <div className="text-slate-600 flex items-center gap-2 text-xs">
+                <Clock className="w-4 h-4 text-indigo-600" />
+                <span className="font-medium">
                   {selectedSlot.display_start} – {selectedSlot.display_end} ({guestTz})
                 </span>
               </div>
@@ -417,7 +639,7 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
             {/* Guest Form */}
             <form onSubmit={handleConfirm} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                   Your Full Name
                 </label>
                 <input
@@ -426,14 +648,14 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
                   disabled={holdExpired || submitting}
                   value={guestName}
                   onChange={(e) => setGuestName(e.target.value)}
-                  placeholder="e.g. Alex Smith"
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-slate-100"
+                  placeholder="e.g. Jane Doe"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-slate-100"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Email Address
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Corporate Email Address
                 </label>
                 <input
                   type="email"
@@ -441,44 +663,87 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
                   disabled={holdExpired || submitting}
                   value={guestEmail}
                   onChange={(e) => setGuestEmail(e.target.value)}
-                  placeholder="alex@example.com"
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-slate-100"
+                  placeholder="jane.doe@acme.corp"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-slate-100"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={holdExpired || submitting}
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm shadow-md shadow-indigo-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {submitting && <RefreshCw className="w-4 h-4 animate-spin" />}
-                Confirm Booking
+                <span>Confirm & Lock In Reservation</span>
               </button>
             </form>
           </div>
         ) : (
-          /* Step 1: Slot Picker grouped by Date */
+          /* STEP 1: TIME SLOT SELECTOR */
           <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-indigo-600" /> Available Times
-              </h2>
-              <button
-                onClick={fetchSlots}
-                disabled={loading}
-                className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 font-medium"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-              </button>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-indigo-600" /> Select Date & Time
+                  </h2>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200 shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Real-Time Sync Active
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Slots update automatically across all tabs and devices in real-time.
+                </p>
+              </div>
+
+              {/* Quick Filter Tabs */}
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl text-xs font-semibold">
+                <button
+                  onClick={() => setDateFilter('all')}
+                  className={`px-3 py-1.5 rounded-lg transition ${
+                    dateFilter === 'all' ? 'bg-white text-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  All Days
+                </button>
+                <button
+                  onClick={() => setDateFilter('week')}
+                  className={`px-3 py-1.5 rounded-lg transition ${
+                    dateFilter === 'week' ? 'bg-white text-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  This Week
+                </button>
+                <button
+                  onClick={() => setDateFilter('nextWeek')}
+                  className={`px-3 py-1.5 rounded-lg transition ${
+                    dateFilter === 'nextWeek' ? 'bg-white text-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Next Week
+                </button>
+                <button
+                  onClick={fetchSlots}
+                  disabled={loading}
+                  title="Refresh Slots"
+                  className="p-1.5 text-slate-500 hover:text-slate-900 ml-1 rounded-lg"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
             </div>
 
-            {sortedDates.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 bg-slate-50 border border-slate-200 rounded-xl">
-                No slots available within the booking horizon. Please check back later.
+            {filteredDates.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 bg-slate-50 border border-slate-200 rounded-2xl">
+                <Calendar className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                <div className="font-semibold text-slate-700">No Slots Available</div>
+                <p className="text-xs text-slate-500 mt-1">
+                  All slots for this period are booked or fall outside the host's booking horizon.
+                </p>
               </div>
             ) : (
               <div className="space-y-6">
-                {sortedDates.map((dateStr) => {
+                {filteredDates.map((dateStr) => {
                   const daySlots = slotsByDate[dateStr];
                   const dateObj = new Date(daySlots[0].start_at);
                   const formattedDate = dateObj.toLocaleDateString([], {
@@ -489,27 +754,33 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
                   });
 
                   return (
-                    <div key={dateStr} className="border border-slate-200 rounded-xl p-4 bg-slate-50/50">
-                      <div className="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
-                        {formattedDate}
+                    <div key={dateStr} className="border border-slate-200/80 rounded-2xl p-5 bg-slate-50/50 hover:bg-slate-50/80 transition">
+                      <div className="font-bold text-slate-800 text-sm mb-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+                          <span>{formattedDate}</span>
+                        </div>
+                        <span className="text-xs text-slate-400 font-normal">
+                          {daySlots.length} available slot{daySlots.length === 1 ? '' : 's'}
+                        </span>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
                         {daySlots.map((slot) => {
                           const isGroup = slot.capacity > 1;
                           return (
                             <button
                               key={slot.start_at}
                               onClick={() => handleSelectSlot(slot)}
-                              className="p-2.5 border border-slate-200 rounded-lg bg-white hover:border-indigo-500 hover:bg-indigo-50/50 text-center transition group shadow-2xs"
+                              className="p-3 border border-slate-200/90 rounded-xl bg-white hover:border-indigo-500 hover:bg-indigo-50/60 hover:shadow-sm text-center transition group relative"
                             >
-                              <div className="text-sm font-semibold text-slate-900 group-hover:text-indigo-600">
+                              <div className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition">
                                 {slot.display_start}
                               </div>
                               {isGroup && (
-                                <div className="text-[11px] text-emerald-600 font-medium mt-0.5">
-                                  {slot.seats_left} seat{slot.seats_left === 1 ? '' : 's'} left
+                                <div className="text-[11px] text-emerald-600 font-medium mt-0.5 flex items-center justify-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                  <span>{slot.seats_left} seat{slot.seats_left === 1 ? '' : 's'}</span>
                                 </div>
                               )}
                             </button>
@@ -527,4 +798,3 @@ export default function PublicBooking({ hostSlug, eventSlug }: PublicBookingProp
     </div>
   );
 }
-

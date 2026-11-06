@@ -37,14 +37,14 @@ describe('Fastify REST API Integration Tests', () => {
       method: 'POST',
       url: '/api/auth/login',
       payload: {
-        email: 'alex@example.com',
-        password: 'password123',
+        email: 'alex.wright@slotbook.io',
+        password: 'SlotBook@Secure2026!',
       },
     });
 
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
-    expect(body.email).toBe('alex@example.com');
+    expect(body.email).toBe('alex.wright@slotbook.io');
     expect(body.slug).toBe('alex');
 
     const cookies = res.cookies;

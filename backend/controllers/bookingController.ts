@@ -110,6 +110,12 @@ export async function confirmHold(req: FastifyRequest, reply: FastifyReply) {
   return reply.send(result);
 }
 
+export async function releaseHold(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const released = await BookingService.releaseHold(id);
+  return reply.send({ status: 'ok', released });
+}
+
 export async function getBookingByToken(req: FastifyRequest, reply: FastifyReply) {
   const { token } = req.params as { token: string };
   const booking = await BookingService.getBookingByToken(token);

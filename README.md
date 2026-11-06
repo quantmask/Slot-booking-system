@@ -77,7 +77,8 @@ The application will be accessible at `http://localhost:3000`.
    - Open `http://localhost:3000/alex/group-workshop`.
    - Observe the seat counter (`3 seats left`). Multiple guests can join the same session until capacity reaches 0.
 4. **Host Dashboard (`/host`)**:
-   - Sign in using `alex@example.com` / `password123` (or click the quick-fill button).
+   - Sign in using `alex.wright@slotbook.io` / `SlotBook@Secure2026!` (or click the quick-fill button).
+   - **KPI Metrics Bar**: Live counts for total bookings, confirmed sessions, event types, and weekly hours.
    - **Profile Tab**: Update home timezone with instant IANA validation.
    - **Event Types Tab**: Create new event types (duration, capacity, buffers, notice, horizon) or archive existing ones.
    - **Bookings Tab**: View all upcoming bookings in host local time, and cancel any booking with a recorded reason.
