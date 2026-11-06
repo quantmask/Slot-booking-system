@@ -53,3 +53,4 @@ export function getGoogleCalendarUrl(event: {
     event.details
   )}&location=${encodeURIComponent('Virtual Meeting Room')}`;
 }
+

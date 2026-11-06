@@ -126,3 +126,4 @@ export default function BookingsTab({ bookings, hostTimezone }: BookingsTabProps
     </div>
   );
 }
+

@@ -203,3 +203,4 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
     </div>
   );
 }
+

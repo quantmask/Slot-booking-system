@@ -52,3 +52,4 @@ export default function EmbedModal({ hostSlug, eventSlug, onClose }: EmbedModalP
     </div>
   );
 }
+

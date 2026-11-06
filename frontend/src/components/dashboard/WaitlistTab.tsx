@@ -61,3 +61,4 @@ export default function WaitlistTab({ waitlists }: WaitlistTabProps) {
     </div>
   );
 }
+
