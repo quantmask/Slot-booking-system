@@ -13,6 +13,8 @@
     "db:seed": "npm run db:seed --prefix backend",
     "test": "npm run test --prefix backend",
     "test:concurrency": "npm run test:concurrency --prefix backend",
+    "test:edge": "npm run test:edge --prefix backend",
+    "benchmark": "npm run benchmark --prefix backend",
     "generate:pdf": "node scripts/generate_report_pdf.js",
     "start": "npm run start --prefix backend"
   },

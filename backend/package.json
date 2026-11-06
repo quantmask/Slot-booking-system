@@ -8,9 +8,11 @@
     "build": "tsc",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx seeds/seed.ts",
-    "test": "vitest run",
+    "test": "vitest run --fileParallelism=false",
     "test:watch": "vitest",
     "test:concurrency": "vitest run tests/concurrency.test.ts",
+    "test:edge": "vitest run tests/edge_cases.test.ts",
+    "benchmark": "tsx scripts/runLoadBenchmark.ts",
     "start": "tsx index.ts"
   },
   "dependencies": {

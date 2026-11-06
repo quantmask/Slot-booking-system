@@ -89,6 +89,48 @@ async function runLoadBenchmark() {
   console.log(`Latency: avg=${holdStats.avg}ms, p50=${holdStats.p50.toFixed(2)}ms, p95=${holdStats.p95.toFixed(2)}ms, p99=${holdStats.p99.toFixed(2)}ms`);
   console.log(`Target: p95 < 200 ms -> ${holdStats.p95 < 200 ? 'PASSED (PASS)' : 'FAILED'}\n`);
 
+  console.log('[Benchmark 3] Running 100 concurrent racers on 1 single capacity-1 slot...');
+  const raceSlot = DateTime.utc().plus({ days: 10 }).set({ hour: 14, minute: 0, second: 0, millisecond: 0 }).toISO()!;
+  const raceLatencies: number[] = [];
+  let successCount = 0;
+  let conflictCount = 0;
+  let errorCount = 0;
+
+  const startRace = Date.now();
+  const racePromises = Array.from({ length: 100 }, async (_, i) => {
+    const t0 = performance.now();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/holds',
+      headers: { 'idempotency-key': `race-100-${i}-${Date.now()}` },
+      payload: {
+        hostSlug: 'alex',
+        eventSlug: 'quick-catchup',
+        slotStart: raceSlot,
+      },
+    });
+    const t1 = performance.now();
+    raceLatencies.push(t1 - t0);
+
+    if (res.statusCode === 201) {
+      successCount++;
+    } else if (res.statusCode === 409) {
+      conflictCount++;
+    } else {
+      errorCount++;
+    }
+  });
+
+  await Promise.all(racePromises);
+  const totalRaceTime = (Date.now() - startRace) / 1000;
+  const raceStats = calculatePercentiles(raceLatencies);
+
+  console.log('--- 100-Racer Single Slot Contention Results ---');
+  console.log(`Total racers: 100 in ${totalRaceTime.toFixed(2)}s`);
+  console.log(`Outcomes: Success(201)=${successCount}, Conflict(409)=${conflictCount}, Errors=${errorCount}`);
+  console.log(`Latency under 100-way contention: avg=${raceStats.avg}ms, p50=${raceStats.p50.toFixed(2)}ms, p95=${raceStats.p95.toFixed(2)}ms, p99=${raceStats.p99.toFixed(2)}ms`);
+  console.log(`Integrity Check: exactly 1 winner -> ${successCount === 1 && conflictCount === 99 ? 'PASSED (PERFECT ACID)' : 'FAILED'}\n`);
+
   await app.close();
   await pool.end();
 }

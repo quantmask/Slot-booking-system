@@ -2,7 +2,11 @@ import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 
-const pdfPath = path.resolve('REPORT.pdf');
+const docsDir = path.resolve('docs');
+if (!fs.existsSync(docsDir)) {
+  fs.mkdirSync(docsDir, { recursive: true });
+}
+const pdfPath = path.join(docsDir, 'REPORT.pdf');
 const doc = new PDFDocument({
   size: 'A4',
   margins: { top: 50, bottom: 50, left: 50, right: 50 },

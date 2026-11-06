@@ -4,9 +4,11 @@ export class OutboxWorker {
   private isRunning = false;
   private timer: NodeJS.Timeout | null = null;
   private webhookUrl: string;
+  private maxAttempts: number;
 
-  constructor(webhookUrl?: string) {
+  constructor(webhookUrl?: string, maxAttempts = 5) {
     this.webhookUrl = webhookUrl || process.env.WEBHOOK_URL || 'http://127.0.0.1:3000/api/mock-webhook';
+    this.maxAttempts = maxAttempts;
   }
 
   start(intervalMs = 2000) {
@@ -66,12 +68,18 @@ export class OutboxWorker {
         };
 
         try {
+          const idempotencyKey = (event.payload && typeof event.payload === 'object' && event.payload.idempotency_key)
+            ? String(event.payload.idempotency_key)
+            : event.id;
+
           const res = await fetch(this.webhookUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'X-Slotbook-Event-Id': event.id,
               'X-Slotbook-Event-Type': event.type,
+              'X-Slotbook-Delivery-Attempt': String(event.attempts + 1),
+              'X-Slotbook-Idempotency-Key': idempotencyKey,
             },
             body: JSON.stringify(deliveryPayload),
             signal: AbortSignal.timeout(3000),
@@ -94,9 +102,9 @@ export class OutboxWorker {
             UPDATE notifications
             SET attempts = attempts + 1,
                 next_attempt_at = NOW() + ($1 || ' seconds')::interval,
-                status = CASE WHEN attempts + 1 >= 10 THEN 'failed' ELSE 'pending' END
-            WHERE id = $2;
-          `, [backoffSec, event.id]);
+                status = CASE WHEN attempts + 1 >= $2 THEN 'failed' ELSE 'pending' END
+            WHERE id = $3;
+          `, [backoffSec, this.maxAttempts, event.id]);
         }
       }
 
