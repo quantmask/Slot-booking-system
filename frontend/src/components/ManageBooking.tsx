@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { 
-  CheckCircle, RefreshCw, XCircle, Download, CalendarPlus 
+  CheckCircle, RefreshCw, XCircle, Download, CalendarPlus, Home 
 } from 'lucide-react';
 import { downloadIcsFile, getGoogleCalendarUrl } from '../lib/calendar.js';
 
@@ -164,7 +164,21 @@ export default function ManageBooking({ token }: ManageBookingProps) {
   });
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-4">
+      {/* Top Navigation Bar with Back to Home Button */}
+      <div className="flex items-center justify-between pb-1">
+        <a
+          href="/"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-indigo-600 bg-white border border-slate-200 hover:border-slate-300 px-3.5 py-1.5 rounded-xl shadow-2xs transition"
+        >
+          <Home className="w-3.5 h-3.5 text-slate-500" />
+          <span>Return to Home Page</span>
+        </a>
+        <span className="text-xs text-slate-400 font-mono hidden sm:inline">
+          Manage Token: {token.slice(0, 10)}...
+        </span>
+      </div>
+
       {/* Boarding Pass / Ticket Header Card */}
       <div className="bg-white border border-slate-200/90 rounded-3xl shadow-sm overflow-hidden">
         {/* Top colored strip */}
@@ -212,15 +226,42 @@ export default function ManageBooking({ token }: ManageBookingProps) {
           </div>
 
           {isCancelled && (
-            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800">
-              <span className="font-bold">Cancellation Reason:</span> {booking.cancel_reason || 'No reason provided'}
+            <div className="space-y-4">
+              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800">
+                <span className="font-bold">Cancellation Reason:</span> {booking.cancel_reason || 'No reason provided'}
+              </div>
+
+              <div className="flex flex-wrap gap-3 pt-1">
+                <a
+                  href={`/${booking.host_slug}/${booking.event_slug}`}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition"
+                >
+                  Book Another Time Slot
+                </a>
+                <a
+                  href="/"
+                  className="px-5 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold shadow-2xs transition inline-flex items-center gap-1.5"
+                >
+                  <Home className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Return to Home Page</span>
+                </a>
+              </div>
             </div>
           )}
 
           {rescheduleSuccess && (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-800 flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-emerald-600" />
-              <span>Meeting was rescheduled successfully!</span>
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-800 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Meeting was rescheduled successfully!</span>
+              </div>
+              <a
+                href="/"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-100/60 text-emerald-900 rounded-xl text-xs font-semibold shadow-2xs transition"
+              >
+                <Home className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Return to Home</span>
+              </a>
             </div>
           )}
 
@@ -255,7 +296,7 @@ export default function ManageBooking({ token }: ManageBookingProps) {
               </div>
 
               {/* Management Actions */}
-              <div className="flex flex-wrap gap-3 pt-2">
+              <div className="flex flex-wrap items-center gap-3 pt-2">
                 <button
                   onClick={startReschedule}
                   className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition"
@@ -268,6 +309,13 @@ export default function ManageBooking({ token }: ManageBookingProps) {
                 >
                   Cancel Meeting
                 </button>
+                <a
+                  href="/"
+                  className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-indigo-600 rounded-xl text-xs font-semibold shadow-2xs transition inline-flex items-center gap-1.5"
+                >
+                  <Home className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Return to Home</span>
+                </a>
               </div>
             </div>
           )}

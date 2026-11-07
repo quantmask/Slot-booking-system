@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle, Download, CalendarPlus, ShieldCheck, Copy, Check } from 'lucide-react';
+import { CheckCircle, Download, CalendarPlus, ShieldCheck, Copy, Check, Home } from 'lucide-react';
 import { downloadIcsFile, getGoogleCalendarUrl } from '../../lib/calendar.js';
 
 interface BookingSuccessProps {
@@ -128,7 +128,7 @@ export default function BookingSuccess({
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
         <a
           href={manageUrl}
-          className="py-2.5 px-5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-xs transition"
+          className="py-2.5 px-5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-xs transition flex items-center justify-center"
         >
           Manage or Reschedule
         </a>
@@ -138,6 +138,13 @@ export default function BookingSuccess({
         >
           Book Another Session
         </button>
+        <a
+          href="/"
+          className="py-2.5 px-5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-indigo-600 font-semibold rounded-xl text-xs transition flex items-center justify-center gap-1.5"
+        >
+          <Home className="w-3.5 h-3.5 text-slate-500" />
+          <span>Return to Home</span>
+        </a>
       </div>
     </div>
   );
