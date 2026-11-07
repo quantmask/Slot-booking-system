@@ -10,6 +10,12 @@
 [![Vite](https://img.shields.io/badge/Vite-6.0-646cff.svg)]()
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-4.0-38bdf8.svg)]()
 
+> [!NOTE]
+> **PRD & Architectural Overview**: The Product Requirements Document (PRD), assignment specifications, and architectural overview are available in the [`PRD/`](file:///d:/Slot-Book/PRD) folder:
+> - **Product Requirements Document**: [`PRD/Slotbook Product Requirement Document.pdf`](file:///d:/Slot-Book/PRD/Slotbook%20Product%20Requirement%20Document.pdf)
+> - **Architectural Overview**: [`PRD/Slotbook Architecture.pdf`](file:///d:/Slot-Book/PRD/Slotbook%20Architecture.pdf)
+> - **Assignment & Engineering Guidelines**: [`PRD/SlotBook Assignment.pdf`](file:///d:/Slot-Book/PRD/SlotBook%20Assignment.pdf)
+
 ---
 
 ## 1. Executive Architecture Overview
@@ -466,9 +472,15 @@ All requests and responses use JSON. Timestamps are formatted as ISO-8601 UTC st
 
 ---
 
-## 10. Presentation Deliverable
+## 10. Documentation & Presentation Deliverables
 
-A presentation slide deck has been compiled as an executive PDF:
-- **Presentation PDF File**: [`Slotbook_Architecture_Presentation.pdf`](file:///d:/Slot-Book/Slotbook_Architecture_Presentation.pdf)
-- **HTML Slide Source**: [`docs/presentation_template.html`](file:///d:/Slot-Book/docs/presentation_template.html)
-- **Content**: 8 widescreen 16:9 slides covering the concurrency dilemma, system topology, 4-tier locking architecture, normalized database schema, real-time SSE sync, asynchronous workers, and benchmark metrics.
+All core documentation, architectural overviews, requirements, and presentation materials are organized across the following files:
+
+1. **PRD & Specifications Directory ([`PRD/`](file:///d:/Slot-Book/PRD))**:
+   - **Product Requirements Document**: [`PRD/Slotbook Product Requirement Document.pdf`](file:///d:/Slot-Book/PRD/Slotbook%20Product%20Requirement%20Document.pdf) — Complete functional, concurrency, and API requirements.
+   - **Architectural Overview**: [`PRD/Slotbook Architecture.pdf`](file:///d:/Slot-Book/PRD/Slotbook%20Architecture.pdf) — System architectural blueprints and design criteria.
+   - **Assignment Brief**: [`PRD/SlotBook Assignment.pdf`](file:///d:/Slot-Book/PRD/SlotBook%20Assignment.pdf) — Core criteria and specification guidelines.
+
+2. **Executive Presentation Deck**:
+   - **Presentation PDF File**: [`Slotbook_Architecture_Presentation.pdf`](file:///d:/Slot-Book/Slotbook_Architecture_Presentation.pdf) — 8 widescreen 16:9 slides covering the concurrency dilemma, system topology, 4-tier locking architecture, normalized database schema, real-time SSE sync, asynchronous workers, and benchmark metrics.
+   - **HTML Slide Source**: [`docs/presentation_template.html`](file:///d:/Slot-Book/docs/presentation_template.html) — Re-renderable vector HTML template for slide modifications.
