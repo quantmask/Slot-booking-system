@@ -2,6 +2,9 @@
 
 > An enterprise-grade appointment scheduling platform engineered with mathematical concurrency correctness, sub-second reactive calendar synchronization, and transactional reliability. Backed by 47 automated tests.
 
+**GitHub Repository**: [https://github.com/quantmask/Slot-booking-system.git](https://github.com/quantmask/Slot-booking-system.git)
+
+[![GitHub Repo](https://img.shields.io/badge/GitHub-quantmask%2FSlot--booking--system-181717.svg?logo=github)](https://github.com/quantmask/Slot-booking-system.git)
 [![Tests](https://img.shields.io/badge/tests-47%20passed-brightgreen.svg)]()
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B%20%28btree__gist%29-blue.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)]()
@@ -348,6 +351,10 @@ This boots PostgreSQL 15, applies all SQL migrations, seeds demo host data, comp
 Ensure Node.js (v20+) and PostgreSQL (v15+) are installed:
 
 ```bash
+# 0. Clone the repository
+git clone https://github.com/quantmask/Slot-booking-system.git
+cd Slot-booking-system
+
 # 1. Install root, backend, and frontend dependencies
 npm install
 
