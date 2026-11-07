@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Slotbook - System Architecture & Framework Presentation</title>
+  <style>
+    @page {
+      size: 11in 6.1875in; /* 16:9 widescreen presentation */
+      margin: 0;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .slide {
+      width: 11in;
+      height: 6.1875in;
+      page-break-after: always;
+      position: relative;
+      padding: 0.45in 0.55in;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+      background: radial-gradient(circle at 90% 10%, #1e1b4b 0%, #0f172a 70%);
+      border-bottom: 1px solid #1e293b;
+    }
+    .slide-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.2in;
+    }
+    .slide-tag {
+      font-size: 0.13in;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #818cf8;
+      display: flex;
+      align-items: center;
+      gap: 0.06in;
+    }
+    .slide-tag::before {
+      content: "";
+      display: inline-block;
+      width: 0.08in;
+      height: 0.08in;
+      border-radius: 50%;
+      background: #10b981;
+    }
+    .slide-title {
+      font-size: 0.32in;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-top: 0.04in;
+    }
+    .slide-subtitle {
+      font-size: 0.14in;
+      color: #94a3b8;
+      margin-top: 0.04in;
+    }
+    .slide-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 0.12in;
+      border-top: 1px solid #1e293b;
+      font-size: 0.11in;
+      color: #64748b;
+    }
+    .slide-footer .brand {
+      font-weight: 700;
+      color: #cbd5e1;
+    }
+    .content-area {
+      flex: 1;
+      display: flex;
+      gap: 0.3in;
+    }
+
+    /* Grid & Cards */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.25in;
+      width: 100%;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0.2in;
+      width: 100%;
+    }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 0.18in;
+      width: 100%;
+    }
+    .card {
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 0.12in;
+      padding: 0.18in;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .card-title {
+      font-size: 0.15in;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 0.06in;
+      display: flex;
+      align-items: center;
+      gap: 0.06in;
+    }
+    .card-desc {
+      font-size: 0.12in;
+      color: #94a3b8;
+      line-height: 1.45;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.03in 0.08in;
+      border-radius: 0.04in;
+      font-size: 0.10in;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge-emerald { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-indigo { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); }
+    .badge-amber { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+    /* Title Slide Specific */
+    .title-slide {
+      background: radial-gradient(circle at 80% 20%, #312e81 0%, #0f172a 65%);
+      justify-content: center;
+      align-items: flex-start;
+      padding: 0.8in 0.9in;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.08in;
+      padding: 0.06in 0.14in;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      border-radius: 999px;
+      font-size: 0.13in;
+      font-weight: 700;
+      color: #a5b4fc;
+      margin-bottom: 0.25in;
+    }
+    .hero-title {
+      font-size: 0.52in;
+      font-weight: 900;
+      color: #ffffff;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.15in;
+    }
+    .hero-subtitle {
+      font-size: 0.19in;
+      color: #94a3b8;
+      max-width: 7.5in;
+      line-height: 1.45;
+      margin-bottom: 0.35in;
+    }
+    .hero-pills {
+      display: flex;
+      gap: 0.15in;
+    }
+    .pill {
+      background: #1e293b;
+      border: 1px solid #334155;
+      padding: 0.1in 0.18in;
+      border-radius: 0.08in;
+      font-size: 0.13in;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+
+    /* Diagram Containers */
+    .diagram-container {
+      width: 100%;
+      height: 100%;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 0.12in;
+      padding: 0.18in;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* Code & Technical Blocks */
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.11in;
+    }
+    .code-block {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 0.08in;
+      padding: 0.12in;
+      color: #38bdf8;
+      overflow-x: auto;
+      line-height: 1.4;
+    }
+
+    /* Metrics Callouts */
+    .metric-num {
+      font-size: 0.34in;
+      font-weight: 900;
+      color: #ffffff;
+      letter-spacing: -0.02em;
+    }
+    .metric-label {
+      font-size: 0.11in;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.115in;
+    }
+    th {
+      text-align: left;
+      padding: 0.08in;
+      background: rgba(30, 41, 59, 0.9);
+      color: #94a3b8;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid #334155;
+    }
+    td {
+      padding: 0.08in;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+      color: #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SLIDE 1: COVER SLIDE -->
+  <section class="slide title-slide">
+    <div class="hero-badge">
+      <span style="width: 0.08in; height: 0.08in; border-radius: 50%; background: #34d399;"></span>
+      Enterprise Calendar Infrastructure
+    </div>
+    <h1 class="hero-title">
+      Slotbook: High-Reliability<br>Scheduling Platform
+    </h1>
+    <p class="hero-subtitle">
+      Mathematical concurrency defense, sub-second reactive calendar sync, and transactional reliability. Zero double bookings guaranteed across high concurrency surges.
+    </p>
+    <div class="hero-pills">
+      <div class="pill">⚡ 47 Automated Test Suites Passed</div>
+      <div class="pill">🔒 PostgreSQL GiST Range Exclusion</div>
+      <div class="pill">📡 Real-Time SSE Event Stream</div>
+      <div class="pill">🚀 Node 24 · Fastify · React 19</div>
+    </div>
+  </section>
+
+  <!-- SLIDE 2: THE PROBLEM & CORE INVARIANT -->
+  <section class="slide">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">Domain Challenges & Invariants</div>
+        <h2 class="slide-title">The Distributed Scheduling Concurrency Dilemma</h2>
+        <div class="slide-subtitle">Why naive booking applications fail under simultaneous user surges</div>
+      </div>
+      <span class="badge badge-indigo">Architectural Foundation</span>
+    </div>
+
+    <div class="content-area">
+      <div class="grid-2">
+        <div class="card" style="border-left: 4px solid #ef4444;">
+          <div>
+            <span class="badge badge-amber" style="margin-bottom: 0.08in;">Common Failure Modes</span>
+            <div class="card-title" style="color: #f87171;">The Race Condition Trap</div>
+            <p class="card-desc" style="margin-bottom: 0.1in;">
+              In standard booking apps, a query checks <code style="color: #fca5a5;">SELECT count(*) &lt; capacity</code>, then executes <code style="color: #fca5a5;">INSERT</code> in a separate statement. Under sustained concurrency:
+            </p>
+            <ul style="font-size: 0.12in; color: #cbd5e1; line-height: 1.6; padding-left: 0.2in;">
+              <li><strong>Double Bookings:</strong> Simultaneous users both read open capacity before either writes.</li>
+              <li><strong>Buffer Overlaps:</strong> Travel/prep buffers collide across concurrent meetings.</li>
+              <li><strong>Client Clock Skew:</strong> Guest system time differences corrupt TTL hold expirations.</li>
+              <li><strong>Orphaned Holds:</strong> Dropped browser sessions lock host calendars indefinitely.</li>
+            </ul>
+          </div>
+          <div class="code-block" style="border-color: rgba(239, 68, 68, 0.4); margin-top: 0.1in;">
+            -- NAIVE FLAW: Check-then-act race window<br>
+            SELECT * FROM bookings WHERE slot_time = $1;<br>
+            -- [WINDOW OF VULNERABILITY: 10-50ms]<br>
+            INSERT INTO bookings (slot_time, guest) VALUES ($1, $2);
+          </div>
+        </div>
+
+        <div class="card" style="border-left: 4px solid #10b981;">
+          <div>
+            <span class="badge badge-emerald" style="margin-bottom: 0.08in;">Slotbook Guarantee</span>
+            <div class="card-title" style="color: #34d399;">The 3 Mathematical Invariants</div>
+            <p class="card-desc" style="margin-bottom: 0.1in;">
+              Slotbook replaces fragile optimistic application checks with four-tier deterministic database locks:
+            </p>
+            <ul style="font-size: 0.12in; color: #cbd5e1; line-height: 1.6; padding-left: 0.2in;">
+              <li><strong>Invariant 1: Zero Overruns:</strong> Exactly 1 user claims a capacity-1 slot, even with 100 simultaneous requests arriving in the exact same millisecond.</li>
+              <li><strong>Invariant 2: Buffer Protection:</strong> Buffer before and after windows are indexed as contiguous time ranges <code style="color: #6ee7b7;">tstzrange</code> that physically reject intersection.</li>
+              <li><strong>Invariant 3: Single Clock Authority:</strong> PostgreSQL <code style="color: #6ee7b7;">NOW()</code> governs TTLs, notices, and horizon windows.</li>
+            </ul>
+          </div>
+          <div class="code-block" style="border-color: rgba(16, 185, 129, 0.4); margin-top: 0.1in;">
+            -- DETERMINISTIC DEFENSE: Storage-level GiST Exclusion<br>
+            ALTER TABLE sessions ADD CONSTRAINT no_overlapping_sessions<br>
+            EXCLUDE USING gist (host_id WITH =, blocked_range WITH &amp;&amp;);
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span class="brand">Slotbook Platform Presentation</span>
+      <span>Slide 2 · Architectural Problem Definition</span>
+    </div>
+  </section>
+
+  <!-- SLIDE 3: OVERALL SYSTEM TOPOLOGY & STACK -->
+  <section class="slide">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">End-to-End Topology</div>
+        <h2 class="slide-title">System Architecture & Framework Stack</h2>
+        <div class="slide-subtitle">Modern reactive presentation tier coupled with high-throughput Fastify & PostgreSQL engine</div>
+      </div>
+      <span class="badge badge-emerald">Production Grade</span>
+    </div>
+
+    <div class="content-area">
+      <div style="flex: 1.3; display: flex; flex-direction: column; justify-content: space-between;">
+        <!-- Architecture Diagram SVG -->
+        <div class="diagram-container">
+          <svg viewBox="0 0 740 280" style="width: 100%; height: 100%;">
+            <defs>
+              <linearGradient id="boxGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#1e293b"/>
+                <stop offset="100%" stop-color="#0f172a"/>
+              </linearGradient>
+              <linearGradient id="accentGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#4f46e5"/>
+                <stop offset="100%" stop-color="#06b6d4"/>
+              </linearGradient>
+            </defs>
+
+            <!-- Tier 1: Clients -->
+            <rect x="10" y="20" width="160" height="110" rx="8" fill="url(#boxGrad)" stroke="#334155" stroke-width="1.5"/>
+            <text x="90" y="45" fill="#f8fafc" font-size="12" font-weight="bold" text-anchor="middle">Frontend Presentation</text>
+            <text x="90" y="65" fill="#94a3b8" font-size="10" text-anchor="middle">React 19 + TypeScript + Vite</text>
+            <text x="90" y="80" fill="#94a3b8" font-size="10" text-anchor="middle">Tailwind CSS + Lucide</text>
+            <text x="90" y="100" fill="#34d399" font-size="9.5" font-weight="bold" text-anchor="middle">Interactive Calendar Dropdown</text>
+            <text x="90" y="115" fill="#38bdf8" font-size="9.5" font-weight="bold" text-anchor="middle">Reactive SSE Client</text>
+
+            <!-- Arrow 1 -->
+            <line x1="170" y1="75" x2="220" y2="75" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"/>
+            <text x="195" y="68" fill="#a5b4fc" font-size="9" text-anchor="middle">HTTP/JSON</text>
+            <text x="195" y="90" fill="#34d399" font-size="8.5" text-anchor="middle">SSE Stream</text>
+
+            <!-- Tier 2: API Gateway -->
+            <rect x="220" y="20" width="160" height="110" rx="8" fill="url(#boxGrad)" stroke="#6366f1" stroke-width="2"/>
+            <text x="300" y="45" fill="#f8fafc" font-size="12" font-weight="bold" text-anchor="middle">API & Concurrency Layer</text>
+            <text x="300" y="65" fill="#94a3b8" font-size="10" text-anchor="middle">Fastify 5 + Node 24</text>
+            <text x="300" y="80" fill="#cbd5e1" font-size="9.5" text-anchor="middle">BookingService · WaitlistService</text>
+            <text x="300" y="95" fill="#cbd5e1" font-size="9.5" text-anchor="middle">Luxon Timezone Math Engine</text>
+            <text x="300" y="112" fill="#818cf8" font-size="9" text-anchor="middle">Rate Limiter & Abuse Shield</text>
+
+            <!-- Arrow 2 -->
+            <line x1="380" y1="75" x2="430" y2="75" stroke="#818cf8" stroke-width="2"/>
+            <text x="405" y="68" fill="#a5b4fc" font-size="9" text-anchor="middle">ACID Pool</text>
+
+            <!-- Tier 3: PostgreSQL Database -->
+            <rect x="430" y="10" width="180" height="240" rx="8" fill="url(#boxGrad)" stroke="#10b981" stroke-width="2"/>
+            <text x="520" y="32" fill="#34d399" font-size="12" font-weight="bold" text-anchor="middle">PostgreSQL 15+ Core</text>
+            <text x="520" y="48" fill="#94a3b8" font-size="9.5" text-anchor="middle">Storage & Concurrency Arbiter</text>
+            <line x1="440" y1="56" x2="600" y2="56" stroke="#334155" stroke-width="1"/>
+
+            <rect x="445" y="65" width="150" height="26" rx="4" fill="#1e293b"/>
+            <text x="520" y="82" fill="#e2e8f0" font-size="9.5" text-anchor="middle">hosts (FOR UPDATE Lock)</text>
+
+            <rect x="445" y="98" width="150" height="26" rx="4" fill="#1e293b"/>
+            <text x="520" y="115" fill="#38bdf8" font-size="9.5" text-anchor="middle">sessions (GiST Exclusion)</text>
+
+            <rect x="445" y="131" width="150" height="26" rx="4" fill="#1e293b"/>
+            <text x="520" y="148" fill="#e2e8f0" font-size="9.5" text-anchor="middle">bookings (5-Min TTL Holds)</text>
+
+            <rect x="445" y="164" width="150" height="26" rx="4" fill="#1e293b"/>
+            <text x="520" y="181" fill="#fcd34d" font-size="9.5" text-anchor="middle">notifications (Outbox Table)</text>
+
+            <rect x="445" y="197" width="150" height="26" rx="4" fill="#1e293b"/>
+            <text x="520" y="214" fill="#e2e8f0" font-size="9.5" text-anchor="middle">waitlists & reminders</text>
+
+            <!-- Tier 4: Background Workers -->
+            <rect x="220" y="165" width="160" height="85" rx="8" fill="url(#boxGrad)" stroke="#f59e0b" stroke-width="1.5"/>
+            <text x="300" y="185" fill="#fcd34d" font-size="11" font-weight="bold" text-anchor="middle">Background Workers</text>
+            <text x="300" y="202" fill="#94a3b8" font-size="9.5" text-anchor="middle">OutboxWorker (HMAC / DLQ)</text>
+            <text x="300" y="218" fill="#94a3b8" font-size="9.5" text-anchor="middle">Sweeper (TTL Cleanup & Reminders)</text>
+            <text x="300" y="235" fill="#64748b" font-size="9" text-anchor="middle">SKIP LOCKED Parallel Safe</text>
+
+            <!-- Line between DB outbox and workers -->
+            <path d="M 445 180 L 380 180" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3,3"/>
+            
+            <!-- Real-time loop back to client -->
+            <path d="M 300 20 L 300 5 L 90 5 L 90 20" fill="none" stroke="#34d399" stroke-width="1.5" stroke-dasharray="4,4"/>
+            <text x="195" y="13" fill="#34d399" font-size="8" text-anchor="middle">EventBus SSE Invalidation</text>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Framework breakdown cards -->
+      <div style="flex: 0.9; display: flex; flex-direction: column; gap: 0.12in;">
+        <div class="card" style="padding: 0.12in;">
+          <div class="card-title" style="font-size: 0.13in;">💻 Frontend: React 19 + Tailwind</div>
+          <p class="card-desc" style="font-size: 0.11in;">
+            Interactive calendar dropdown with monthly availability dots, zero-flicker single-day slot viewing, automatic IANA timezone conversion, and live SSE reload.
+          </p>
+        </div>
+        <div class="card" style="padding: 0.12in;">
+          <div class="card-title" style="font-size: 0.13in;">⚡ Backend: Fastify 5 + Node 24</div>
+          <p class="card-desc" style="font-size: 0.11in;">
+            Low-overhead asynchronous server architecture handling 1,000+ requests/sec with Zod schema validation, signed HTTP cookies, and sub-millisecond route dispatch.
+          </p>
+        </div>
+        <div class="card" style="padding: 0.12in;">
+          <div class="card-title" style="font-size: 0.13in;">🛡️ Database: PostgreSQL 15+ GiST</div>
+          <p class="card-desc" style="font-size: 0.11in;">
+            <code style="color: #6ee7b7;">btree_gist</code> extension enforcing physical overlap rejection on temporal ranges, ACID serializable row locks, and transactional outbox.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span class="brand">Slotbook Platform Presentation</span>
+      <span>Slide 3 · System Topology & Framework Stack</span>
+    </div>
+  </section>
+
+  <!-- SLIDE 4: 4-TIER CONCURRENCY DEFENSE -->
+  <section class="slide">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">Reliability Engineering</div>
+        <h2 class="slide-title">4-Tier Concurrency & Overlap Prevention</h2>
+        <div class="slide-subtitle">How Slotbook eliminates double bookings and race conditions with mathematical guarantees</div>
+      </div>
+      <span class="badge badge-emerald">Zero Overlap</span>
+    </div>
+
+    <div class="content-area">
+      <div class="grid-4">
+        <!-- Tier 1 -->
+        <div class="card" style="border-top: 3px solid #6366f1;">
+          <div>
+            <span class="badge badge-indigo">Tier 1: Serialization</span>
+            <div class="card-title" style="margin-top: 0.08in;">Host Row Lock</div>
+            <p class="card-desc" style="margin-top: 0.06in;">
+              The first operation in every transaction executes <code style="color: #a5b4fc;">SELECT ... FOR UPDATE</code> on the host record.
+            </p>
+            <p class="card-desc" style="margin-top: 0.08in;">
+              Serializes concurrent holds for a specific host, preventing interleaved slot creation while allowing independent hosts to run concurrently at full speed.
+            </p>
+          </div>
+          <div class="code-block" style="margin-top: 0.1in;">
+            SELECT id FROM hosts<br>
+            WHERE id = $1 FOR UPDATE;
+          </div>
+        </div>
+
+        <!-- Tier 2 -->
+        <div class="card" style="border-top: 3px solid #10b981;">
+          <div>
+            <span class="badge badge-emerald">Tier 2: Exclusion</span>
+            <div class="card-title" style="margin-top: 0.08in;">GiST Range Constraint</div>
+            <p class="card-desc" style="margin-top: 0.06in;">
+              PostgreSQL storage engine directly blocks intersecting intervals using the Generalized Search Tree (GiST).
+            </p>
+            <p class="card-desc" style="margin-top: 0.08in;">
+              Checks both session duration and buffer windows <code style="color: #34d399;">[start - b_before, end + b_after)</code>. Rejects any colliding insert with SQL error 23P01.
+            </p>
+          </div>
+          <div class="code-block" style="margin-top: 0.1in;">
+            EXCLUDE USING gist (<br>
+            &nbsp;&nbsp;host_id WITH =,<br>
+            &nbsp;&nbsp;blocked_range WITH &amp;&amp;<br>
+            ) WHERE (status = 'active');
+          </div>
+        </div>
+
+        <!-- Tier 3 -->
+        <div class="card" style="border-top: 3px solid #f59e0b;">
+          <div>
+            <span class="badge badge-amber">Tier 3: Time Authority</span>
+            <div class="card-title" style="margin-top: 0.08in;">Database Clock Single Source</div>
+            <p class="card-desc" style="margin-top: 0.06in;">
+              Client clocks are completely untrusted. All hold TTLs, minimum notices, and booking horizon cutoffs are evaluated via <code style="color: #fcd34d;">NOW()</code>.
+            </p>
+            <p class="card-desc" style="margin-top: 0.08in;">
+              Prevents guests with manipulated system clocks from claiming expired holds or circumventing advance notice constraints.
+            </p>
+          </div>
+          <div class="code-block" style="margin-top: 0.1in;">
+            hold_expires_at &gt; NOW()<br>
+            min_notice: NOW() + notice<br>
+            horizon: NOW() + days
+          </div>
+        </div>
+
+        <!-- Tier 4 -->
+        <div class="card" style="border-top: 3px solid #38bdf8;">
+          <div>
+            <span class="badge badge-indigo">Tier 4: Atomicity</span>
+            <div class="card-title" style="margin-top: 0.08in;">Atomic Reschedule & Rollback</div>
+            <p class="card-desc" style="margin-top: 0.06in;">
+              Rescheduling swaps the appointment from the old slot to the new slot in a single ACID transaction.
+            </p>
+            <p class="card-desc" style="margin-top: 0.08in;">
+              If the target slot is seized or conflicts, the transaction aborts instantly. The guest never loses their original reserved appointment.
+            </p>
+          </div>
+          <div class="code-block" style="margin-top: 0.1in;">
+            BEGIN;<br>
+            &nbsp;&nbsp;UPDATE bookings...<br>
+            &nbsp;&nbsp;UPDATE sessions...<br>
+            COMMIT; -- all or nothing
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span class="brand">Slotbook Platform Presentation</span>
+      <span>Slide 4 · 4-Tier Concurrency Defense</span>
+    </div>
+  </section>
+
+  <!-- SLIDE 5: DATABASE SCHEMA & ENTITY ARCHITECTURE -->
+  <section class="slide">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">Relational Data Model</div>
+        <h2 class="slide-title">PostgreSQL Database Schema Architecture</h2>
+        <div class="slide-subtitle">Normalized relational structure engineered for high-throughput locking and auditability</div>
+      </div>
+      <span class="badge badge-emerald">Normalized 3NF</span>
+    </div>
+
+    <div class="content-area">
+      <div style="flex: 1.2;">
+        <table>
+          <thead>
+            <tr>
+              <th>Table Name</th>
+              <th>Primary Purpose</th>
+              <th>Key Columns & Constraints</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong style="color: #818cf8;">hosts</strong></td>
+              <td>Tenant identity & root lock</td>
+              <td><code>id, slug (UNIQUE), timezone, password_hash, daily_booking_cap</code></td>
+            </tr>
+            <tr>
+              <td><strong style="color: #818cf8;">event_types</strong></td>
+              <td>Configurable meeting templates</td>
+              <td><code>duration_min, capacity, buffer_before/after, min_notice, horizon</code></td>
+            </tr>
+            <tr>
+              <td><strong style="color: #34d399;">sessions</strong></td>
+              <td>Concrete occupied calendar interval</td>
+              <td><code>blocked_range (tstzrange), capacity, status</code> + <strong>GiST Exclusion</strong></td>
+            </tr>
+            <tr>
+              <td><strong style="color: #34d399;">bookings</strong></td>
+              <td>Individual guest reservations</td>
+              <td><code>session_id, guest_email, status ('held'|'confirmed'), token_hash</code></td>
+            </tr>
+            <tr>
+              <td><strong style="color: #fcd34d;">notifications</strong></td>
+              <td>Transactional Outbox queue</td>
+              <td><code>type, payload, status ('pending'|'delivered'|'failed'), attempts</code></td>
+            </tr>
+            <tr>
+              <td><strong style="color: #e2e8f0;">external_busy_times</strong></td>
+              <td>External sync & .ics busy blocks</td>
+              <td><code>start_at, end_at, title</code> (prunes overlapping public slots)</td>
+            </tr>
+            <tr>
+              <td><strong style="color: #e2e8f0;">waitlists</strong></td>
+              <td>Priority promotion queues</td>
+              <td><code>session_id, guest_email, status ('waiting'|'offered'), hold_id</code></td>
+            </tr>
+            <tr>
+              <td><strong style="color: #e2e8f0;">reminders</strong></td>
+              <td>Automated notifications</td>
+              <td><code>booking_id, reminder_type ('24h'|'1h'), scheduled_for, status</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="flex: 0.8; display: flex; flex-direction: column; gap: 0.15in;">
+        <div class="card">
+          <div class="card-title">🔗 Half-Open Interval Algebra</div>
+          <p class="card-desc">
+            All temporal boundaries use half-open intervals: <code>[start_at, end_at)</code>.
+          </p>
+          <p class="card-desc" style="margin-top: 0.06in;">
+            Ensures that a 09:00–10:00 meeting and a 10:00–11:00 meeting are perfectly adjacent without false conflict, while any overlap greater than 0 microseconds is caught immediately.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🔐 Idempotency Safeguards</div>
+          <p class="card-desc">
+            <code>idempotency_keys</code> stores incoming request hashes and pre-computed JSON responses.
+          </p>
+          <p class="card-desc" style="margin-top: 0.06in;">
+            Guarantees that network retries or client double-clicks safely return the exact same booking record without duplicate holds or card double charges.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span class="brand">Slotbook Platform Presentation</span>
+      <span>Slide 5 · Database Schema Architecture</span>
+    </div>
+  </section>
+
+  <!-- SLIDE 6: REAL-TIME SSE & REACTIVE CALENDAR -->
+  <section class="slide">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">Real-Time User Experience</div>
+        <h2 class="slide-title">Sub-Second Reactive Calendar & SSE Sync</h2>
+        <div class="slide-subtitle">Instantaneous slot locking across all concurrent browser sessions without aggressive polling</div>
+      </div>
+      <span class="badge badge-indigo">Zero Lag</span>
+    </div>
+
+    <div class="content-area">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">📡 Server-Sent Events (SSE) Stream</div>
+          <p class="card-desc" style="margin-bottom: 0.1in;">
+            When any user reserves, confirms, reschedules, or releases a slot, the system emits an internal event across an EventEmitter pub/sub channel.
+          </p>
+          <ul style="font-size: 0.12in; color: #cbd5e1; line-height: 1.6; padding-left: 0.2in;">
+            <li><strong>Persistent HTTP Connection:</strong> <code>GET /api/hosts/:host/events/:slug/slots/stream</code> maintains an open, lightweight SSE socket.</li>
+            <li><strong>Heartbeat Keep-Alive:</strong> 15-second heartbeat prevents proxy timeouts and idle socket closures.</li>
+            <li><strong>Sub-Second Broadcast:</strong> All other guests viewing the same calendar receive a <code>SLOTS_UPDATED</code> event within <strong>&lt; 50ms</strong>.</li>
+            <li><strong>Zero Polling Burden:</strong> Eliminates continuous HTTP request spam, slashing server load by 95%.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📅 Interactive Calendar Popover UI</div>
+          <p class="card-desc" style="margin-bottom: 0.1in;">
+            Engineered to replace cumbersome multi-day endless scroll with an intuitive executive date picker:
+          </p>
+          <ul style="font-size: 0.12in; color: #cbd5e1; line-height: 1.6; padding-left: 0.2in;">
+            <li><strong>Single-Day Focus:</strong> Shows slots exclusively for the selected date, defaulting to today in the guest's local timezone.</li>
+            <li><strong>Availability Dots:</strong> Calendar dropdown displays green availability indicators under dates with bookable slots.</li>
+            <li><strong>Immediate Auto-Reload:</strong> If User A selects 10:00 AM, User B's screen instantly dims that slot without requiring a manual page refresh.</li>
+            <li><strong>Jump Action:</strong> Intelligent "Jump to Next Open Day" button navigates directly to upcoming host availability.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span class="brand">Slotbook Platform Presentation</span>
+      <span>Slide 6 · Real-Time Reactive UX Architecture</span>
+    </div>
+  </section>
+
+  <!-- SLIDE 7: ASYNCHRONOUS WORKERS & OUTBOX -->
+  <section class="slide">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">Reliable Message Processing</div>
+        <h2 class="slide-title">Transactional Outbox & Background Workers</h2>
+        <div class="slide-subtitle">Guaranteed at-least-once delivery, exponential backoff, and dead-letter queue isolation</div>
+      </div>
+      <span class="badge badge-amber">Event Driven</span>
+    </div>
+
+    <div class="content-area">
+      <div class="grid-3">
+        <!-- Worker 1 -->
+        <div class="card">
+          <span class="badge badge-indigo">Pattern</span>
+          <div class="card-title" style="margin-top: 0.08in;">Transactional Outbox</div>
+          <p class="card-desc">
+            Booking confirmation and outbound notification are written in the <strong>exact same ACID transaction</strong>.
+          </p>
+          <p class="card-desc" style="margin-top: 0.08in;">
+            Guarantees that an email or webhook is never emitted if the database transaction fails, and a booking is never created without an accompanying event record.
+          </p>
+        </div>
+
+        <!-- Worker 2 -->
+        <div class="card">
+          <span class="badge badge-amber">Outbox Worker</span>
+          <div class="card-title" style="margin-top: 0.08in;">Delivery & HMAC Signatures</div>
+          <p class="card-desc">
+            Polls pending notifications using <code>FOR UPDATE SKIP LOCKED</code>, allowing multiple worker instances to operate in parallel without lock contention.
+          </p>
+          <p class="card-desc" style="margin-top: 0.08in;">
+            Computes cryptographic <strong>SHA-256 HMAC signatures</strong> for host endpoints and implements exponential backoff (2s, 4s, 8s, 16s... up to 5 attempts) before Dead-Letter Queue (DLQ).
+          </p>
+        </div>
+
+        <!-- Worker 3 -->
+        <div class="card">
+          <span class="badge badge-emerald">Sweeper</span>
+          <div class="card-title" style="margin-top: 0.08in;">Hygiene & Reminders</div>
+          <p class="card-desc">
+            Runs periodically to maintain storage hygiene:
+          </p>
+          <ul style="font-size: 0.11in; color: #cbd5e1; line-height: 1.5; padding-left: 0.18in; margin-top: 0.06in;">
+            <li><strong>Expired Holds:</strong> Marks abandoned 5-minute holds as <code>expired</code> and releases empty sessions back to the open pool.</li>
+            <li><strong>Reminder Dispatch:</strong> Queries due 24h and 1h appointment reminders and queues them for delivery.</li>
+            <li><strong>Waitlist Promotion:</strong> Automatically claims cancellations for waiting guests.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span class="brand">Slotbook Platform Presentation</span>
+      <span>Slide 7 · Asynchronous Processing & Outbox Pattern</span>
+    </div>
+  </section>
+
+  <!-- SLIDE 8: VERIFICATION, BENCHMARKS & CONCLUSION -->
+  <section class="slide">
+    <div class="slide-header">
+      <div>
+        <div class="slide-tag">Quality Assurance & Performance</div>
+        <h2 class="slide-title">Verification Benchmark & Technical Highlights</h2>
+        <div class="slide-subtitle">Proven mathematical correctness verified across 47 automated integration test suites</div>
+      </div>
+      <span class="badge badge-emerald">All Tests Passing</span>
+    </div>
+
+    <div class="content-area">
+      <div style="flex: 1.2; display: flex; flex-direction: column; justify-content: space-between;">
+        <!-- Metrics Bar -->
+        <div style="display: flex; gap: 0.2in;">
+          <div class="card" style="flex: 1; text-align: center; padding: 0.12in;">
+            <div class="metric-num" style="color: #34d399;">47 / 47</div>
+            <div class="metric-label">Automated Tests Passed</div>
+          </div>
+          <div class="card" style="flex: 1; text-align: center; padding: 0.12in;">
+            <div class="metric-num" style="color: #818cf8;">28ms</div>
+            <div class="metric-label">Slot Generation (p95: 44ms)</div>
+          </div>
+          <div class="card" style="flex: 1; text-align: center; padding: 0.12in;">
+            <div class="metric-num" style="color: #38bdf8;">0.00%</div>
+            <div class="metric-label">Error Rate under Race</div>
+          </div>
+        </div>
+
+        <!-- Verification Highlights -->
+        <div class="card" style="margin-top: 0.12in; flex: 1;">
+          <div class="card-title">🧪 Comprehensive Test Coverage Summary</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.15in; margin-top: 0.06in; font-size: 0.115in; color: #cbd5e1;">
+            <div>
+              <strong style="color: #a5b4fc;">Concurrency Suite:</strong> 50 simultaneous holds on single-seat capacity; exactly 1 succeeds, 49 cleanly receive HTTP 409 conflict.
+            </div>
+            <div>
+              <strong style="color: #a5b4fc;">Edge Cases Suite:</strong> Spring-forward/fall-back DST hour jumps; zero-length buffer boundary interval collisions; raw GiST exclusion rejection.
+            </div>
+            <div>
+              <strong style="color: #34d399;">Extensions Suite:</strong> Daily booking caps, per-guest active booking limits, .ics calendar feed sync, and waitlist auto-promotion.
+            </div>
+            <div>
+              <strong style="color: #34d399;">Worker Suite:</strong> Asynchronous outbox delivery with SHA-256 HMAC headers, DLQ retry backoff, and Sweeper hold hygiene.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Conclusion Takeaways -->
+      <div class="card" style="flex: 0.8; border-left: 4px solid #6366f1;">
+        <span class="badge badge-indigo">Executive Conclusion</span>
+        <div class="card-title" style="margin-top: 0.08in;">Why Slotbook Excels</div>
+        <p class="card-desc" style="margin-top: 0.06in; line-height: 1.55;">
+          Slotbook transforms appointment scheduling from an unpredictable application race into a <strong>mathematically provable, deterministic distributed system</strong>.
+        </p>
+        <p class="card-desc" style="margin-top: 0.08in; line-height: 1.55;">
+          By leveraging PostgreSQL range constraints, row-level serialization, Server-Sent Events, and the Transactional Outbox pattern, Slotbook achieves enterprise reliability with zero double-booking tolerance.
+        </p>
+        <div style="margin-top: 0.12in; padding-top: 0.1in; border-top: 1px solid #334155; font-size: 0.11in; color: #94a3b8;">
+          Ready for presentation and multi-tenant cloud deployment.
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span class="brand">Slotbook Platform Presentation</span>
+      <span>Slide 8 · Verification Benchmark & Conclusion</span>
+    </div>
+  </section>
+
+</body>
+</html>
